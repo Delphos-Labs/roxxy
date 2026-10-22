@@ -1,0 +1,50 @@
+FROM debian:bookworm-slim
+
+# Install basic tools and package managers
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    apt-transport-https \
+    coreutils \
+    python3 \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Alpine APK (for testing APK proxy)
+RUN curl -o /usr/local/bin/apk https://gitlab.alpinelinux.org/alpine/apk-tools/-/raw/master/apk.static && \
+    chmod +x /usr/local/bin/apk
+
+# Install Node.js and npm (for testing NPM proxy)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv (for testing PyPI proxy)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install Go (for testing Go modules proxy)
+RUN curl -L https://go.dev/dl/go1.21.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Configure proxy
+ENV HTTP_PROXY=http://roxxy:3128
+ENV HTTPS_PROXY=http://roxxy:3128
+ENV http_proxy=http://roxxy:3128
+ENV https_proxy=http://roxxy:3128
+ENV NO_PROXY=localhost,127.0.0.1,roxxy,nexus
+ENV no_proxy=localhost,127.0.0.1,roxxy,nexus
+
+# Install CA certificate (will be provided at runtime or copied from parent)
+# Note: CA cert should be available in the build context
+RUN mkdir -p /usr/local/share/ca-certificates
+
+WORKDIR /test
+
+# Test script
+COPY test-components.sh /test/test-components.sh
+RUN chmod +x /test/test-components.sh
+
+CMD ["/test/test-components.sh"]
+

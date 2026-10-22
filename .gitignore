@@ -1,0 +1,77 @@
+certs/*
+*.pem
+*.crt
+*.csr
+*.key
+# Binary files in root directory only
+/roxxy
+/roxxy-test
+/roar
+/main
+/lscache
+/lsembed
+/audit-sbom
+/check-licenses
+# Old build artifacts
+registry-proxy/
+# Generated build artifacts
+*.min.js
+*.min.js.gz
+sbom.json
+sbom.json.gz
+# Gzipped static files (generated during build)
+internal/ui/static/*.gz
+internal/ui/static/**/*.gz
+app.min.js
+app.min.js.gz
+# Backup files
+*.bak
+*.bak2
+*.orig
+*~
+# Test/export tarballs
+coverage.out
+*.tar
+*.tar.gz
+*.tgz
+docker*.tar*
+# Node.js dependencies
+node_modules/
+# macOS
+.DS_Store
+*.app/
+# Build output
+dist/
+# Windows binaries
+*.exe
+# Windows resource files (generated during build)
+*.syso
+# Generated icons (keep committed ones in build/)
+*.ico
+!build/windows/*.ico
+# Temporary scripts
+extract_console_logs.js
+extract_console_logs_safe.js
+analyze_logs.sh
+STOP_ERROR_LOOP.md
+Screenshot*.png
+# Local dev artifacts
+*.log
+*.mine
+restart-claude.sh
+/roxxy-*
+/roar-patched-*
+/roar-linux-*
+# Per-machine Claude Code config; "local" in the filename is the signal.
+.claude/
+
+# archifau deployment-local material (never commit certs/keys)
+cmd/archifau/certs/
+docker/archifau/ca-certs/*
+!docker/archifau/ca-certs/.keep
+cmd/archifau/.env
+/archifau
+
+# Private audit evidence and agent session state
+.local/
+.do-work/

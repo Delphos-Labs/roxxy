@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  enable:
+    - govet        # Catches real bugs
+    - ineffassign  # Catches dead code
+    - staticcheck  # Catches common mistakes
+    - unused       # Catches unused code
+    - errcheck     # Catches unchecked errors (use util.DeferClose for deferred operations)
+  exclusions:
+    paths:
+      - vendor
+      - testdata
+      
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+# Use util.DeferClose(closer) or defer func() { util.Logerr(operation()) }()
+# for operations that return errors in defer statements
+
+issues:
+  max-issues-per-linter: 5  # Temporarily high to see full impact
+  max-same-issues: 3
+
+run:
+  timeout: 5m
+  tests: true
+
+output:
+  formats:
+    text:
+      path: stdout

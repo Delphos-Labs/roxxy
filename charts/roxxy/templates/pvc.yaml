@@ -1,0 +1,21 @@
+{{- if and .Values.cache.enabled (not .Values.cache.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "roxxy.fullname" . }}-cache
+  labels:
+    {{- include "roxxy.labels" . | nindent 4 }}
+  {{- with .Values.cache.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.cache.accessMode }}
+  {{- if .Values.cache.storageClassName }}
+  storageClassName: {{ .Values.cache.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}
+{{- end }}

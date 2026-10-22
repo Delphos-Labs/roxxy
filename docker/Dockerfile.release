@@ -1,0 +1,83 @@
+# Multi-arch Dockerfile for GitHub Actions CI/CD
+# This Dockerfile doesn't require roxxy proxy to be running
+# Use docker/Dockerfile for local development with roxxy proxy
+
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache ca-certificates nodejs npm git
+
+WORKDIR /build
+
+# Install the lockfile-pinned JavaScript build tools
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source files
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN cp "$(go env GOROOT)/LICENSE" /build/GO_LICENSE
+
+# Generate embedded UI assets (minifies js/*.js -> js/*.min.js via build-js.js)
+RUN go generate ./...
+
+# Build arguments
+ARG TARGETOS
+ARG TARGETARCH
+ARG BUILD_TIME=unknown
+
+# Build roxxy and roar binaries
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -ldflags="-w -s -X main.BuildTime=$BUILD_TIME" -trimpath -o roxxy .
+
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -ldflags="-w -s -X main.BuildTime=$BUILD_TIME" -trimpath -o roar ./cmd/roar
+
+# Create hardlinks for convenience commands
+RUN ./roxxy hardlink
+
+# Final stage - Alpine-based image
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates xz jq tzdata
+
+# Set environment variable for Go's TLS library
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+WORKDIR /app
+
+# Copy binaries from builder
+COPY --from=builder /build/roxxy /build/roar ./
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/roxxy/
+COPY --from=builder /build/GO_LICENSE /usr/share/licenses/roxxy/GO_LICENSE
+
+# Copy hardlinks
+COPY --from=builder /usr/bin/docker /usr/bin/docker
+COPY --from=builder /usr/bin/raw /usr/bin/raw
+COPY --from=builder /usr/bin/package /usr/bin/package
+COPY --from=builder /usr/bin/embed /usr/bin/embed
+
+# Add app directory to PATH for convenience
+ENV PATH=$PATH:/app
+
+# Create cache directory and bootstrap init directory
+RUN mkdir -p /app/cache /docker-entrypoint-initcache.d
+
+# Create non-root user
+RUN addgroup -S roxxy && adduser -S roxxy -G roxxy && \
+    chown -R roxxy:roxxy /app /docker-entrypoint-initcache.d
+
+# Expose ports
+EXPOSE 3128 443
+
+# Volume for cache bootstrap tarballs
+VOLUME ["/docker-entrypoint-initcache.d"]
+
+# Switch to non-root user
+USER roxxy
+
+ENTRYPOINT ["/app/roxxy"]
+CMD ["server"]

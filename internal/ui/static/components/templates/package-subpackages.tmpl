@@ -1,0 +1,58 @@
+{{/* Package Sub-packages Template (only for Go) */}}
+{{define "package-subpackages"}}
+<template x-if="pkgGroup.packages && Object.keys(pkgGroup.packages).length > 0">
+    <div class="ml-4 mt-1 space-y-1">
+        <template x-for="[subPkgName, subPkgGroup] in Object.entries(pkgGroup.packages || {})" :key="subPkgName">
+            <div x-show="packageMatchesSearch(subPkgName, '') || (subPkgGroup.versions && subPkgGroup.versions.some(p => packageMatchesSearch(subPkgName, p.version)))">
+                <div x-data="{ pkgName: subPkgName, pkgGroup: subPkgGroup, pkgPath: `${pkgName}/${subPkgName}` }">
+                    <button 
+                        @click.prevent="togglePackage('{{.type}}', pkgPath)"
+                        type="button"
+                        class="w-full flex items-center justify-between px-4 py-2 bg-green-25 hover:bg-green-50 rounded transition-colors text-left">
+                        <div class="flex items-center space-x-2 flex-1">
+                            <span class="text-sm font-medium text-gray-700" x-text="formatGoPackageName(subPkgName, '{{.type}}') || 'N/A'"></span>
+                            <span class="text-xs text-gray-500" x-text="(() => { const count = subPkgGroup.count !== undefined ? subPkgGroup.count : (subPkgGroup.versions && subPkgGroup.versions.length ? subPkgGroup.versions.length : 0); return `(${count} version${count !== 1 ? 's' : ''})`; })()"></span>
+                        </div>
+                        <i :class="expandedPackages[`{{.type}}:${pkgPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" class="icon text-gray-400 text-xs"></i>
+                    </button>
+                    <div x-show="expandedPackages[`{{.type}}:${pkgPath}`] === true" x-cloak class="ml-4 mt-1 space-y-1">
+                        <template x-for="pkg in subPkgGroup.versions" :key="pkg.id || (pkg.version + (pkg.architecture ? `:${pkg.architecture}` : ''))">
+                            <div x-show="packageMatchesSearch(subPkgName, pkg.version)" 
+                                 class="px-4 py-2 bg-white border border-gray-100 rounded hover:bg-gray-50 transition-colors" 
+                                 {{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}:class="{'cursor-pointer': pkg.name && pkg.version && !pkg.loadingMetadata}"{{end}}
+                                 {{template "version-click-handler" .}}>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-4 flex-1 flex-wrap">
+                                        <span class="text-sm font-medium text-gray-900" x-text="pkg.version || 'N/A'"></span>
+                                        <span class="text-xs text-gray-500" x-text="formatBytes(pkg.size)"></span>
+                                        <span x-show="pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            <i class="ti ti-check icon mr-1"></i>
+                                            <span>Cached</span>
+                                        </span>
+                                        <span x-show="!pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                            <i class="ti ti-cloud icon mr-1"></i>
+                                            <span>Available</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div x-show="pkg.license || pkg.description" class="mt-1 pt-1 border-t border-gray-100 space-y-1">
+                                    <div x-show="pkg.license" class="text-xs">
+                                        <span class="text-gray-500">License: </span>
+                                        <span class="text-gray-700" x-text="pkg.license"></span>
+                                    </div>
+                                    <div x-show="pkg.description" class="text-xs text-gray-600" x-text="pkg.description"></div>
+                                </div>
+                                {{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}
+                                <div x-show="pkg.metadata" class="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                                    <div x-show="pkg.metadata && pkg.metadata.description" class="text-xs text-gray-600" x-text="(pkg.metadata && pkg.metadata.description) || ''"></div>
+                                </div>
+                                {{end}}
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>
+{{end}}

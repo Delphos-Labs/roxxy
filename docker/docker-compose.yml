@@ -1,0 +1,54 @@
+services:
+  roxxy:
+    image: roxxy:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # BUILD_TIME should be set as environment variable before running docker-compose
+        # Or use: BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") docker compose build
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+        # Proxy settings for Nexus caching (set by docker-compose-build.sh)
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-github.com,auth.docker.io,localhost,127.0.0.1,172.20.0.0/16,dl-cdn.alpinelinux.org,dl-2.alpinelinux.org,dl-3.alpinelinux.org,dl-4.alpinelinux.org,dl-5.alpinelinux.org,alpinelinux.org}
+    # To build with roxxy-builder (for caching):
+    #   docker compose build --builder=roxxy-builder roxxy
+    # Or use the helper script:
+    #   ./build.sh
+    # To build with BUILD_TIME automatically set:
+    #   ./docker/docker-compose-build.sh roxxy
+    # Or manually: BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") docker compose build
+    container_name: roxxy
+    ports:
+      - "3128:3128"   # HTTP/HTTPS proxy port
+      - "7080:80"     # HTTP router port (host:container)
+      - "7443:443"    # SNI-based routing port (host:container)
+    volumes:
+      - ../certs:/app/certs:ro
+      - ../config.yaml:/app/config.yaml:ro
+      - cache-data:/app/cache
+    environment:
+      - HTTPS_PROXY=
+      - HTTP_PROXY=
+      - http_proxy=
+      - https_proxy=
+      - LISTEN_ADDR=:3128
+      - CONFIG_FILE=/app/config.yaml
+      # Don't set HTTP_PROXY/HTTPS_PROXY for roxxy itself - it should never use a proxy for upstream fetches
+      # The code explicitly bypasses proxy in FetchFromUpstream, but we also don't want environment variables
+      # that could interfere. Other containers that use roxxy as a proxy should set HTTP_PROXY themselves.
+      - NO_PROXY=github.com,auth.docker.io,localhost,127.0.0.1,172.20.0.0/16,dl-cdn.alpinelinux.org,dl-2.alpinelinux.org,dl-3.alpinelinux.org,dl-4.alpinelinux.org,dl-5.alpinelinux.org,alpinelinux.org,proxy.golang.org,registry-1.docker.io
+    restart: unless-stopped
+    networks:
+      - roxxy-net
+
+volumes:
+  nexus-data:
+    driver: local
+  cache-data:
+    driver: local
+
+networks:
+  roxxy-net:
+    driver: bridge

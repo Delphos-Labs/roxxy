@@ -1,0 +1,12 @@
+{{/* Version Click Handler - Type-specific */}}
+{{define "version-click-handler"}}
+{{if eq .type "npm"}}
+@click="pkg.cached && !pkg.loadingMetadata && loadNPMMetadata(pkg, $event)"
+{{else if eq .type "pypi"}}
+@click="pkg.name && pkg.version && !pkg.loadingMetadata && loadPyPIMetadata(pkg, $event)"
+{{else if eq .type "go"}}
+@click="pkg.name && pkg.version && !pkg.loadingMetadata && loadGoMetadata(pkg, $event)"
+{{else if eq .type "apk"}}
+@click="pkg.name && pkg.version && !pkg.loadingMetadata && loadAPKMetadata(pkg, $event)"
+{{end}}
+{{end}}

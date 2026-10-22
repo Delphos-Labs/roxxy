@@ -1,0 +1,125 @@
+{{/* Recursive Group Template - Alpine.js handles the recursion, Go only renders structure */}}
+{{define "recursive-group"}}
+<div x-data="{ 
+    groupData: (packageTree && packageTree['{{.type}}'] && packageTree['{{.type}}'].groups && packageTree['{{.type}}'].groups[groupKey]) ? packageTree['{{.type}}'].groups[groupKey] : {},
+    groupPath: groupKey,
+    groupKey: groupKey,
+    depth: {{.depth}}
+}" class="w-full mb-1.5">
+    <!-- Colored Container with Group Button - extends full width, background starts at same indent as type header, content has one more step padding -->
+    <div :class="`w-full ${getGroupColors(depth).bgColor} ${getGroupColors(depth).hoverColor} rounded-lg transition-colors`" :style="`padding-left: ${depth * 0.75 + 1.75}rem;`">
+        <button 
+            @click.prevent="toggleGroup('{{.type}}', groupPath)"
+            type="button"
+            class="w-full flex items-center justify-between py-2 pr-4 rounded-lg transition-colors text-left">
+            <div class="flex items-center space-x-3">
+                <span :class="`font-semibold ${getGroupColors(depth).textColor}`" 
+                      {{if eq .type "go"}}x-text="formatGoPackageName(groupKey, '{{.type}}')"{{else}}x-text="groupKey"{{end}}></span>
+                <span :class="`text-sm ${getGroupColors(depth).iconColor} ml-2`" 
+                      x-text="`(${(groupData && groupData.count) || 0} packages)`"></span>
+            </div>
+            <i :class="expandedGroups[`{{.type}}:${groupPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" 
+               class="icon text-gray-400"></i>
+        </button>
+    </div>
+    
+    <!-- Group Content -->
+    <div x-show="expandedGroups[`{{.type}}:${groupPath}`] === true" x-cloak class="mt-2 space-y-2">
+        <!-- Packages in this group -->
+        <template x-if="groupData && groupData.packages && Object.keys(groupData.packages).length > 0">
+            <div class="w-full">
+                <template x-for="[pkgName, pkgGroup] in Object.entries((groupData && groupData.packages) || {})" :key="pkgName">
+                    <div x-show="packageMatchesSearch(pkgName, '') || (pkgGroup.versions && pkgGroup.versions.some(p => packageMatchesSearch(pkgName, p.version)))">
+                        {{template "package-component" (dict "type" .type "isFlat" false "groupPath" "groupPath")}}
+                    </div>
+                </template>
+            </div>
+        </template>
+        
+        <!-- RECURSIVE: Nested groups - Alpine.js handles recursion, not Go template -->
+        <template x-if="groupData && groupData.groups && Object.keys(groupData.groups).length > 0">
+            <div>
+                <template x-for="[nestedGroupKey, nestedGroupData] in Object.entries((groupData && groupData.groups) || {})" :key="nestedGroupKey">
+                    <!-- RECURSION: Alpine.js renders this same structure recursively -->
+                    <div x-data="{ 
+                        groupData: nestedGroupData, 
+                        groupPath: {{if or (eq .type "go") (eq .type "apt") (eq .type "apk")}}`${groupPath}/${nestedGroupKey}`{{else}}`${groupPath}:${nestedGroupKey}`{{end}}, 
+                        groupKey: nestedGroupKey, 
+                        depth: depth + 1
+                    }" class="w-full mb-1.5">
+                        <!-- Colored Container with Group Button - extends full width, background starts at same indent as type header, content has one more step padding -->
+                        <div :class="`w-full ${getGroupColors(depth).bgColor} ${getGroupColors(depth).hoverColor} rounded-lg transition-colors`" :style="`padding-left: ${depth * 0.75 + 1.75}rem;`">
+                            <button 
+                                @click.prevent="toggleGroup('{{.type}}', groupPath)"
+                                type="button"
+                                class="w-full flex items-center justify-between py-2 pr-4 rounded-lg transition-colors text-left">
+                                <div class="flex items-center space-x-3">
+                                    <span :class="`font-semibold ${getGroupColors(depth).textColor}`" 
+                                          {{if eq .type "go"}}x-text="formatGoPackageName(groupKey, '{{.type}}')"{{else}}x-text="groupKey"{{end}}></span>
+                                    <span :class="`text-sm ${getGroupColors(depth).iconColor} ml-2`" 
+                                          x-text="`(${(groupData && groupData.count) || 0} packages)`"></span>
+                                </div>
+                                <i :class="expandedGroups[`{{.type}}:${groupPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" 
+                                   class="icon text-gray-400"></i>
+                            </button>
+                        </div>
+                        <div x-show="expandedGroups[`{{.type}}:${groupPath}`] === true" x-cloak class="mt-2 space-y-2">
+                            <!-- Packages -->
+                            <template x-if="groupData && groupData.packages && Object.keys(groupData.packages).length > 0">
+                                <div class="w-full">
+                                    <template x-for="[pkgName, pkgGroup] in Object.entries((groupData && groupData.packages) || {})" :key="pkgName">
+                                        <div x-show="packageMatchesSearch(pkgName, '') || (pkgGroup.versions && pkgGroup.versions.some(p => packageMatchesSearch(pkgName, p.version)))">
+                                            {{template "package-component" (dict "type" .type "isFlat" false "groupPath" "groupPath")}}
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <!-- Deeper nested groups - Alpine.js will handle recursion here too -->
+                            <template x-if="groupData && groupData.groups && Object.keys(groupData.groups).length > 0">
+                                <div>
+                                    <template x-for="[deeperGroupKey, deeperGroupData] in Object.entries((groupData && groupData.groups) || {})" :key="deeperGroupKey">
+                                        <div x-data="{ 
+                                            groupData: deeperGroupData, 
+                                            groupPath: {{if or (eq .type "go") (eq .type "apt") (eq .type "apk")}}`${groupPath}/${deeperGroupKey}`{{else}}`${groupPath}:${deeperGroupKey}`{{end}}, 
+                                            groupKey: deeperGroupKey, 
+                                            depth: depth + 1
+                                        }" class="w-full mb-1.5">
+                                            <!-- Colored Container with Group Button - extends full width, background starts at same indent as type header, content has one more step padding -->
+                                            <div :class="`w-full ${getGroupColors(depth).bgColor} ${getGroupColors(depth).hoverColor} rounded-lg transition-colors`" :style="`padding-left: ${depth * 0.75 + 1.75}rem;`">
+                                                <button 
+                                                    @click.prevent="toggleGroup('{{.type}}', groupPath)"
+                                                    type="button"
+                                                    class="w-full flex items-center justify-between py-2 pr-4 rounded-lg transition-colors text-left">
+                                                    <div class="flex items-center space-x-3">
+                                                        <span :class="`font-semibold ${getGroupColors(depth).textColor}`" 
+                                                              {{if eq .type "go"}}x-text="formatGoPackageName(groupKey, '{{.type}}')"{{else}}x-text="groupKey"{{end}}></span>
+                                                        <span :class="`text-sm ${getGroupColors(depth).iconColor} ml-2`" 
+                                                              x-text="`(${(groupData && groupData.count) || 0} packages)`"></span>
+                                                    </div>
+                                                    <i :class="expandedGroups[`{{.type}}:${groupPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" 
+                                                       class="icon text-gray-400"></i>
+                                                </button>
+                                            </div>
+                                            <div x-show="expandedGroups[`{{.type}}:${groupPath}`] === true" x-cloak class="mt-2 space-y-2">
+                                                <template x-if="groupData && groupData.packages && Object.keys(groupData.packages).length > 0">
+                                                    <div class="w-full">
+                                                        <template x-for="[pkgName, pkgGroup] in Object.entries((groupData && groupData.packages) || {})" :key="pkgName">
+                                                            <div x-show="packageMatchesSearch(pkgName, '') || (pkgGroup.versions && pkgGroup.versions.some(p => packageMatchesSearch(pkgName, p.version)))">
+                                                                {{template "package-component" (dict "type" .type "isFlat" false "groupPath" "groupPath")}}
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </div>
+</div>
+{{end}}

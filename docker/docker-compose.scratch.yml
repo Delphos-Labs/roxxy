@@ -1,0 +1,29 @@
+services:
+  # Roxxy proxy (scratch-based, minimal image)
+  roxxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.scratch
+    container_name: roxxy
+    ports:
+      - "3128:3128"   # HTTP/HTTPS proxy port
+      - "7080:80"     # HTTP router port (host:container)
+      - "7443:443"    # SNI-based routing port (host:container)
+    volumes:
+      - ../certs:/app/certs:ro
+      - ../config.yaml:/app/config.yaml:ro
+      - cache-data:/app/cache
+    environment:
+      - LISTEN_ADDR=:3128
+      - CONFIG_FILE=/app/config.yaml
+    restart: unless-stopped
+    networks:
+      - roxxy-net
+
+volumes:
+  cache-data:
+    driver: local
+
+networks:
+  roxxy-net:
+    driver: bridge

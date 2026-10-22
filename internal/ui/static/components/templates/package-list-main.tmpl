@@ -1,0 +1,49 @@
+{{/* Main Package List Template */}}
+<template id="package-list-component">
+    <div class="w-full">
+    {{range $type := .Types}}
+    <div x-show="packageTree && packageTree['{{$type}}'] !== undefined" class="mb-2 w-full" data-type="{{$type}}">
+        <!-- Type Header -->
+        <button 
+            @click.prevent="toggleType('{{$type}}')"
+            type="button"
+            class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-left mb-2">
+            <div class="flex items-center space-x-3">
+                <i :class="getTypeIcon('{{$type}}')" class="icon text-gray-600"></i>
+                <span class="font-semibold text-gray-900 capitalize" x-text="'{{$type}}'"></span>
+                <span class="text-sm text-gray-500 ml-2" x-text="`(${(packageTree['{{$type}}'] && packageTree['{{$type}}'].count) || 0} packages)`"></span>
+            </div>
+            <i :class="expandedTypes['{{$type}}'] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" class="icon text-gray-400"></i>
+        </button>
+        
+        <div x-show="expandedTypes && expandedTypes['{{$type}}'] === true" x-cloak class="mt-2 space-y-1.5 w-full">
+            <!-- Hierarchical Groups - RECURSIVE -->
+            <template x-for="groupKey in Object.keys((packageTree['{{$type}}'] && packageTree['{{$type}}'].groups) || {}).sort((a, b) => a.localeCompare(b))" :key="groupKey">
+                <div x-show="groupKey !== 'default' && packageTree['{{$type}}'] && packageTree['{{$type}}'].groups && packageTree['{{$type}}'].groups[groupKey] && ((packageTree['{{$type}}'].groups[groupKey].groups && Object.keys(packageTree['{{$type}}'].groups[groupKey].groups).length > 0) || (packageTree['{{$type}}'].groups[groupKey].packages && Object.keys(packageTree['{{$type}}'].groups[groupKey].packages).length > 0))" 
+                     x-cloak>
+                    {{template "recursive-group" (dict "type" $type "depth" 0)}}
+                </div>
+            </template>
+            
+            <!-- Root-level packages -->
+            <div x-show="packageTree['{{$type}}'] && packageTree['{{$type}}'].packages && Object.keys(packageTree['{{$type}}'].packages).length > 0" class="w-full">
+                <template x-for="[pkgName, pkgGroup] in Object.entries((packageTree['{{$type}}'] && packageTree['{{$type}}'].packages) || {})" :key="`root-${pkgName}`">
+                    <div x-show="packageMatchesSearch(pkgName, '') || (pkgGroup.versions && pkgGroup.versions.some(p => packageMatchesSearch(pkgName, p.version)))">
+                        {{template "package-component" (dict "type" $type "isFlat" false)}}
+                    </div>
+                </template>
+            </div>
+            
+            <!-- Flat groups (default) - only for non-Go types -->
+            {{if ne $type "go"}}
+            <template x-for="[groupName, groupData] in Object.entries((packageTree['{{$type}}'] && packageTree['{{$type}}'].groups) || {})" :key="`{{$type}}-${groupName}`">
+                <div x-show="groupName === 'default' && expandedTypes['{{$type}}'] === true" x-cloak class="mb-2">
+                    {{template "flat-group" (dict "type" $type)}}
+                </div>
+            </template>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+    </div>
+</template>

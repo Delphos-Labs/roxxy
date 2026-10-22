@@ -1,0 +1,149 @@
+{{/* Version Metadata Template - Routes to basic or full */}}
+{{define "version-metadata"}}
+{{if .isFlat}}
+    {{template "version-metadata-full" .}}
+{{else}}
+    {{template "version-metadata-basic" .}}
+{{end}}
+{{end}}
+
+{{/* Basic Version Metadata (for hierarchical groups) */}}
+{{define "version-metadata-basic"}}
+{{if ne .type "apt"}}
+<div x-show="pkg.license || pkg.description" class="mt-1 pt-1 border-t border-gray-100 space-y-1">
+    <div x-show="pkg.license" class="text-xs">
+        <span class="text-gray-500">License: </span>
+        <span class="text-gray-700" x-text="pkg.license"></span>
+    </div>
+    <div x-show="pkg.description" class="text-xs text-gray-600" x-text="pkg.description"></div>
+</div>
+{{else}}
+<div x-show="pkg.license" class="mt-1 pt-1 border-t border-gray-100 space-y-1">
+    <div class="text-xs">
+        <span class="text-gray-500">License: </span>
+        <span class="text-gray-700" x-text="pkg.license"></span>
+    </div>
+</div>
+{{end}}
+{{if or (eq .type "apk") (eq .type "apt")}}
+<div x-show="pkg.architecture" class="mt-1">
+    <span class="text-xs text-gray-500">Architecture: </span>
+    <span class="text-xs text-gray-700 font-mono" x-text="pkg.architecture"></span>
+</div>
+{{end}}
+{{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}
+<div x-show="pkg.metadata" class="mt-2 pt-2 border-t border-gray-200 space-y-1">
+    <div x-show="pkg.metadata && pkg.metadata.description" class="text-xs text-gray-600" x-text="(pkg.metadata && pkg.metadata.description) || ''"></div>
+    {{template "version-metadata-type-specific" .}}
+</div>
+{{end}}
+{{end}}
+
+{{/* Type-Specific Metadata Fields */}}
+{{define "version-metadata-type-specific"}}
+{{if eq .type "go"}}
+    <div x-show="pkg.metadata && pkg.metadata.goVersion" class="text-xs">
+        <span class="text-gray-500">Go Version: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.goVersion) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.published" class="text-xs">
+        <span class="text-gray-500">Published: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.published) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories) && pkg.metadata.directories.length > 0" class="text-xs">
+        <span class="text-gray-500">Directories: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories)) ? pkg.metadata.directories.join(', ') : ''"></span>
+    </div>
+{{end}}
+{{end}}
+
+{{/* Full Version Metadata (for flat groups) */}}
+{{define "version-metadata-full"}}
+{{if or (eq .type "apk") (eq .type "apt")}}
+<div x-show="pkg.architecture" class="mt-1">
+    <span class="text-xs text-gray-500">Architecture{{if eq .type "apk"}}<span x-show="pkg.architecture.includes(',')">s</span>{{end}}: </span>
+    <span class="text-xs text-gray-700 font-mono" x-text="pkg.architecture"></span>
+</div>
+{{end}}
+<div x-show="pkg.license || (pkg.metadata && pkg.metadata.license) || {{if ne .type "apt"}}pkgGroup.license{{else}}false{{end}}" class="mt-1">
+    <span class="text-xs text-gray-500">License: </span>
+    <span class="text-xs text-gray-700" x-text="pkg.license || (pkg.metadata && pkg.metadata.license ? (typeof pkg.metadata.license === 'string' ? pkg.metadata.license : (pkg.metadata.license && pkg.metadata.license.type ? pkg.metadata.license.type : '')) : '') || {{if ne .type "apt"}}(pkgGroup.license || ''){{else}}''{{end}}"></span>
+</div>
+{{if ne .type "apt"}}
+<div x-show="pkg.description || (pkg.metadata && pkg.metadata.description)" class="mt-1">
+    <span class="text-xs text-gray-600" x-text="pkg.description || (pkg.metadata && pkg.metadata.description) || ''"></span>
+</div>
+{{end}}
+<div x-show="(pkg.dependencies && Array.isArray(pkg.dependencies) && pkg.dependencies.length > 0) || (pkg.metadata && pkg.metadata.dependencies && ((Array.isArray(pkg.metadata.dependencies) && pkg.metadata.dependencies.length > 0) || (typeof pkg.metadata.dependencies === 'object' && !Array.isArray(pkg.metadata.dependencies) && Object.keys(pkg.metadata.dependencies).length > 0)))" class="mt-1">
+    <span class="text-xs text-gray-500">Depends: </span>
+    <span class="text-xs text-gray-600" x-text="(pkg.dependencies && Array.isArray(pkg.dependencies)) ? pkg.dependencies.join(', ') : (pkg.metadata && pkg.metadata.dependencies ? (Array.isArray(pkg.metadata.dependencies) ? pkg.metadata.dependencies.join(', ') : (typeof pkg.metadata.dependencies === 'object' && !Array.isArray(pkg.metadata.dependencies) ? Object.keys(pkg.metadata.dependencies).join(', ') : '')) : '')"></span>
+</div>
+{{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}
+<div x-show="pkg.metadata" class="mt-2 pt-2 border-t border-gray-200 space-y-1">
+    {{template "version-metadata-extended" .}}
+    <div x-show="pkg.license || {{if eq .type "apk"}}(pkg.metadata && pkg.metadata.license) || {{end}}pkgGroup.license" class="text-xs">
+        <span class="text-gray-500">License: </span>
+        <span class="text-gray-700" x-text="pkg.license || {{if eq .type "apk"}}(pkg.metadata && pkg.metadata.license ? pkg.metadata.license : '') || {{end}}pkgGroup.license || ''"></span>
+    </div>
+</div>
+{{end}}
+<div x-show="!pkg.name || !pkg.version || pkg.name === 'N/A' || pkg.version === 'N/A'" class="mt-1">
+    <span class="text-xs text-gray-400 italic" x-text="`ID: ${pkg.id ? (pkg.id.split('/').pop() || pkg.id) : (pkg.version || 'N/A')}`"></span>
+</div>
+{{end}}
+
+{{/* Extended Metadata for NPM/PyPI/Go/APK */}}
+{{define "version-metadata-extended"}}
+{{if or (eq .type "npm") (eq .type "pypi")}}
+    <div x-show="pkg.metadata && pkg.metadata.author" class="text-xs">
+        <span class="text-gray-500">Author: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.author) ? (typeof pkg.metadata.author === 'string' ? pkg.metadata.author : (pkg.metadata.author && pkg.metadata.author.name ? pkg.metadata.author.name : '')) : ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.homepage" class="text-xs">
+        <span class="text-gray-500">Homepage: </span>
+        <a :href="(pkg.metadata && pkg.metadata.homepage) || '#'" target="_blank" class="text-blue-600 hover:underline" x-text="(pkg.metadata && pkg.metadata.homepage) || ''"></a>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.repository" class="text-xs">
+        <span class="text-gray-500">Repository: </span>
+        <a :href="(pkg.metadata && pkg.metadata.repository) ? (typeof pkg.metadata.repository === 'string' ? pkg.metadata.repository : (pkg.metadata.repository && pkg.metadata.repository.url ? pkg.metadata.repository.url : '')) : '#'" target="_blank" class="text-blue-600 hover:underline" x-text="(pkg.metadata && pkg.metadata.repository) ? (typeof pkg.metadata.repository === 'string' ? pkg.metadata.repository : (pkg.metadata.repository && pkg.metadata.repository.url ? pkg.metadata.repository.url : '')) : ''"></a>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.keywords && Array.isArray(pkg.metadata.keywords) && pkg.metadata.keywords.length > 0" class="text-xs">
+        <span class="text-gray-500">Keywords: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.keywords && Array.isArray(pkg.metadata.keywords)) ? pkg.metadata.keywords.join(', ') : ''"></span>
+    </div>
+{{end}}
+{{if eq .type "go"}}
+    <div x-show="pkg.metadata && pkg.metadata.description" class="text-xs mt-1">
+        <span class="text-gray-600" x-text="(pkg.metadata && pkg.metadata.description) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.goVersion" class="text-xs">
+        <span class="text-gray-500">Go Version: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.goVersion) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.published" class="text-xs">
+        <span class="text-gray-500">Published: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.published) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories) && pkg.metadata.directories.length > 0" class="text-xs">
+        <span class="text-gray-500">Directories: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories)) ? pkg.metadata.directories.join(', ') : ''"></span>
+    </div>
+{{end}}
+{{if eq .type "apk"}}
+    <div x-show="pkg.metadata && pkg.metadata.description" class="text-xs mt-1">
+        <span class="text-gray-600" x-text="(pkg.metadata && pkg.metadata.description) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.architecture" class="text-xs">
+        <span class="text-gray-500">Architecture: </span>
+        <span class="text-gray-700 font-mono" x-text="(pkg.metadata && pkg.metadata.architecture) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.size" class="text-xs">
+        <span class="text-gray-500">Size: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.size) || ''"></span>
+    </div>
+    <div x-show="pkg.metadata && pkg.metadata.homepage" class="text-xs">
+        <span class="text-gray-500">Homepage: </span>
+        <a :href="(pkg.metadata && pkg.metadata.homepage) || '#'" target="_blank" class="text-blue-600 hover:underline" x-text="(pkg.metadata && pkg.metadata.homepage) || ''"></a>
+    </div>
+{{end}}
+{{end}}

@@ -1,0 +1,16 @@
+<!-- Package Metadata Component -->
+<div x-show="pkgGroup.description || pkgGroup.license || (pkgGroup.dependencies && Array.isArray(pkgGroup.dependencies) && pkgGroup.dependencies.length > 0)" 
+     class="px-4 py-2 mb-2 bg-blue-50 border border-blue-200 rounded text-xs space-y-1">
+    <div x-show="pkgGroup.description" class="text-gray-700">
+        <span class="font-medium text-gray-600">Description: </span>
+        <span x-text="pkgGroup.description"></span>
+    </div>
+    <div x-show="pkgGroup.license" class="text-gray-700">
+        <span class="font-medium text-gray-600">License: </span>
+        <span x-text="pkgGroup.license"></span>
+    </div>
+    <div x-show="pkgGroup.dependencies && Array.isArray(pkgGroup.dependencies) && pkgGroup.dependencies.length > 0" class="text-gray-700">
+        <span class="font-medium text-gray-600">Dependencies: </span>
+        <span x-text="(pkgGroup.dependencies && Array.isArray(pkgGroup.dependencies)) ? pkgGroup.dependencies.join(', ') : ''"></span>
+    </div>
+</div>

@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roxxy Dashboard</title>
+    <!-- Tailwind CSS CDN - for production, consider building with PostCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/init.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"
+    />
+    <style>
+      [x-cloak] {
+        display: none !important;
+      }
+      .icon {
+        width: 1.25rem;
+        height: 1.25rem;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50">
+    <div id="app" x-data="appData()" x-cloak>
+      <!-- Navigation -->
+      <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between h-16">
+            <div class="flex items-center space-x-2">
+              <i class="ti ti-server icon text-blue-600"></i>
+              <h1 class="text-xl font-semibold text-gray-900">Roxxy</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+              <button
+                @click="activeTab = 'dashboard'"
+                :class="activeTab === 'dashboard' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'"
+                class="px-3 py-2 font-medium flex items-center space-x-1"
+              >
+                <i class="ti ti-dashboard icon"></i>
+                <span>Dashboard</span>
+              </button>
+              <button
+                @click="activeTab = 'packages'"
+                :class="activeTab === 'packages' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'"
+                class="px-3 py-2 font-medium flex items-center space-x-1"
+              >
+                <i class="ti ti-package icon"></i>
+                <span>Packages</span>
+              </button>
+              <button
+                @click="activeTab = 'docker'; checkBuildTime()"
+                :class="activeTab === 'docker' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'"
+                class="px-3 py-2 font-medium flex items-center space-x-1"
+              >
+                <i class="ti ti-brand-docker icon"></i>
+                <span>Docker</span>
+              </button>
+              <button
+                @click="activeTab = 'cache'; if (urlCacheEntries.length === 0 && !loadingURLCache) loadURLCache()"
+                :class="activeTab === 'cache' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600'"
+                class="px-3 py-2 font-medium flex items-center space-x-1"
+              >
+                <i class="ti ti-database icon"></i>
+                <span>URL Cache</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main Content -->
+      <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Dashboard Tab -->
+        <div x-show="activeTab === 'dashboard'" x-cloak class="space-y-6">
+          <div class="flex items-center space-x-2">
+            <i class="ti ti-dashboard icon text-gray-600"></i>
+            <h2 class="text-2xl font-bold text-gray-900">Dashboard</h2>
+          </div>
+
+          <!-- Stats Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Skeleton loading state -->
+            <template x-for="i in 4" :key="i">
+              <div
+                x-show="loadingStats"
+                class="bg-white rounded-lg shadow p-6 border-l-4 border-gray-300 animate-pulse"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex-1">
+                    <div class="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                    <div class="h-8 bg-gray-200 rounded w-20"></div>
+                  </div>
+                  <div class="w-12 h-12 bg-gray-200 rounded opacity-20"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Actual stats cards -->
+            <div
+              x-show="!loadingStats"
+              class="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500 hover:shadow-md transition-shadow"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <div
+                    class="text-sm font-medium text-gray-500 flex items-center space-x-1"
+                  >
+                    <i class="ti ti-database icon"></i>
+                    <span>Total Cache Size</span>
+                  </div>
+                  <div
+                    class="mt-2 text-2xl font-semibold text-gray-900"
+                    x-text="formatBytes(stats.total_cache_size || 0)"
+                  ></div>
+                </div>
+                <i
+                  class="ti ti-database icon text-blue-500 text-3xl opacity-20"
+                ></i>
+              </div>
+            </div>
+            <div
+              x-show="!loadingStats"
+              class="bg-white rounded-lg shadow p-6 border-l-4 border-green-500 hover:shadow-md transition-shadow"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <div
+                    class="text-sm font-medium text-gray-500 flex items-center space-x-1"
+                  >
+                    <i class="ti ti-package icon"></i>
+                    <span>Package Count</span>
+                  </div>
+                  <div
+                    class="mt-2 text-2xl font-semibold text-gray-900"
+                    x-text="stats.package_count || 0"
+                  ></div>
+                </div>
+                <i
+                  class="ti ti-package icon text-green-500 text-3xl opacity-20"
+                ></i>
+              </div>
+            </div>
+            <div
+              x-show="!loadingStats"
+              class="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500 hover:shadow-md transition-shadow"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <div
+                    class="text-sm font-medium text-gray-500 flex items-center space-x-1"
+                  >
+                    <i class="ti ti-brand-docker icon"></i>
+                    <span>Docker Images</span>
+                  </div>
+                  <div
+                    class="mt-2 text-2xl font-semibold text-gray-900"
+                    x-text="stats.docker_image_count || 0"
+                  ></div>
+                </div>
+                <i
+                  class="ti ti-brand-docker icon text-purple-500 text-3xl opacity-20"
+                ></i>
+              </div>
+            </div>
+            <div
+              x-show="!loadingStats"
+              class="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-500 hover:shadow-md transition-shadow"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <div
+                    class="text-sm font-medium text-gray-500 flex items-center space-x-1"
+                  >
+                    <i class="ti ti-clock icon"></i>
+                    <span>Time Saved</span>
+                  </div>
+                  <div
+                    class="mt-2 text-2xl font-semibold text-gray-900"
+                    x-text="stats.total_time_saved || '0s'"
+                  ></div>
+                </div>
+                <i
+                  class="ti ti-clock icon text-yellow-500 text-3xl opacity-20"
+                ></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Package Count by Type -->
+          <div class="bg-white rounded-lg shadow p-6" x-show="!loadingStats">
+            <h3
+              class="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2"
+            >
+              <i class="ti ti-chart-pie icon"></i>
+              <span>Packages by Type</span>
+            </h3>
+            <div class="space-y-3">
+              <!-- Ensure consistent order: apk, apt, npm, pypi, go (same as packages page) -->
+              <template
+                x-for="type in ['apk', 'apt', 'npm', 'pypi', 'go']"
+                :key="type"
+              >
+                <template
+                  x-if="stats.package_count_by_type && stats.package_count_by_type[type] !== undefined"
+                >
+                  <div
+                    @click="filterByType(type)"
+                    class="flex justify-between items-center p-3 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all cursor-pointer"
+                  >
+                    <div class="flex items-center space-x-2">
+                      <i :class="getTypeIcon(type)" class="icon"></i>
+                      <span
+                        class="text-gray-700 capitalize font-medium"
+                        x-text="type.toUpperCase()"
+                      ></span>
+                    </div>
+                    <span
+                      class="text-gray-900 font-semibold text-lg"
+                      x-text="stats.package_count_by_type[type] || 0"
+                    ></span>
+                  </div>
+                </template>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Packages Tab -->
+        <div x-show="activeTab === 'packages'" x-cloak class="space-y-6">
+          <!-- Sticky header with controls -->
+          <div class="sticky top-0 z-20 bg-gray-50 -mx-4 px-4 py-3 space-y-3">
+            <div class="flex justify-between items-center">
+              <div class="flex items-center space-x-2">
+                <i class="ti ti-package icon text-gray-600"></i>
+                <h2 class="text-2xl font-bold text-gray-900">Packages</h2>
+              </div>
+              <div class="flex space-x-2 items-center">
+                <!-- Sort dropdown -->
+                <select
+                  x-model="packageSortBy"
+                  @change="loadPackages()"
+                  class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                >
+                  <option value="name">Sort by Name</option>
+                  <option value="age">Sort by Age</option>
+                  <option value="access_count">Sort by Access Count</option>
+                  <option value="last_accessed">Sort by Last Accessed</option>
+                  <option value="size">Sort by Size</option>
+                </select>
+                <button
+                  @click="togglePackageSortOrder()"
+                  class="p-2 border border-gray-300 rounded-md hover:bg-gray-50 bg-white"
+                  :title="packageSortOrder === 'asc' ? 'Ascending' : 'Descending'"
+                >
+                  <i
+                    :class="packageSortOrder === 'asc' ? 'ti ti-sort-ascending' : 'ti ti-sort-descending'"
+                    class="icon"
+                  ></i>
+                </button>
+                <div class="relative">
+                  <i
+                    class="ti ti-search icon absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  ></i>
+                  <input
+                    type="text"
+                    x-model="packageSearch"
+                    placeholder="Search packages..."
+                    class="pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  />
+                </div>
+                <label
+                  class="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer bg-white"
+                >
+                  <input
+                    type="checkbox"
+                    x-model="showUncached"
+                    @change="loadPackages()"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span class="text-sm text-gray-700">Show available</span>
+                </label>
+                <button
+                  @click="toggleSelectionMode()"
+                  :class="selectionMode ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700'"
+                  class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50 border border-gray-300"
+                >
+                  <i class="ti ti-checkbox icon mr-1"></i>Select
+                </button>
+              </div>
+            </div>
+
+            <!-- Bulk action toolbar -->
+            <div
+              x-show="selectionMode && selectedPackages.length > 0"
+              class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 shadow-sm"
+            >
+              <span
+                class="text-sm text-blue-800 font-medium"
+                x-text="selectedPackages.length + ' selected'"
+              ></span>
+              <div class="flex space-x-2">
+                <button
+                  @click="clearSelection()"
+                  class="px-3 py-1 text-sm text-gray-600 hover:bg-white rounded"
+                >
+                  Clear
+                </button>
+                <button
+                  @click="openDeleteModal()"
+                  class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 flex items-center"
+                >
+                  <i class="ti ti-trash icon mr-1"></i>Delete Selected
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Packages Tree View -->
+          <!-- Skeleton loading state -->
+          <div
+            x-show="loadingPackages"
+            class="bg-white rounded-lg shadow overflow-hidden animate-pulse"
+          >
+            <div class="px-6 py-4 border-b border-gray-200">
+              <div class="h-4 bg-gray-200 rounded w-32"></div>
+            </div>
+            <div class="p-4 space-y-4">
+              <template x-for="i in 5" :key="i">
+                <div class="space-y-2">
+                  <div class="h-6 bg-gray-200 rounded w-48"></div>
+                  <div class="ml-4 space-y-1">
+                    <div class="h-4 bg-gray-100 rounded w-64"></div>
+                    <div class="h-4 bg-gray-100 rounded w-56"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Actual packages tree -->
+          <div
+            x-show="!loadingPackages"
+            class="bg-white rounded-lg shadow overflow-hidden"
+          >
+            <div
+              class="packages-table"
+              style="max-height: 70vh; overflow-y: auto"
+            >
+              <div class="px-6 py-4 border-b border-gray-200">
+                <div class="text-sm text-gray-600">
+                  <span class="font-medium" x-text="packageTotal || 0"></span>
+                  packages total
+                </div>
+              </div>
+              <div class="p-4">
+                <!-- Package List Component Container -->
+                <!-- Note: This is within the app's x-data scope, so no need for x-data="app" here -->
+                <div id="package-list-container">
+                  <!-- Component will be loaded here -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Docker Tab -->
+        <div
+          x-show="activeTab === 'docker'"
+          x-cloak
+          id="docker-tab-wrapper"
+          class="space-y-6"
+        >
+          <!-- Sticky header with controls -->
+          <div class="sticky top-0 z-20 bg-gray-50 -mx-4 px-4 py-3 space-y-3">
+            <div class="flex justify-between items-center">
+              <div class="flex items-center space-x-2">
+                <i class="ti ti-brand-docker icon text-gray-600"></i>
+                <h2 class="text-2xl font-bold text-gray-900">Docker Images</h2>
+              </div>
+              <div class="flex space-x-2 items-center">
+                <!-- Sort dropdown -->
+                <select
+                  x-model="dockerSortBy"
+                  @change="renderDockerTableDirectly()"
+                  class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                >
+                  <option value="name">Sort by Name</option>
+                  <option value="size">Sort by Size</option>
+                  <option value="date">Sort by Date</option>
+                  <option value="tag_count">Sort by Tag Count</option>
+                </select>
+                <button
+                  @click="toggleDockerSortOrder(); renderDockerTableDirectly()"
+                  class="p-2 border border-gray-300 rounded-md hover:bg-gray-50 bg-white"
+                  :title="dockerSortOrder === 'asc' ? 'Ascending' : 'Descending'"
+                >
+                  <i
+                    :class="dockerSortOrder === 'asc' ? 'ti ti-sort-ascending' : 'ti ti-sort-descending'"
+                    class="icon"
+                  ></i>
+                </button>
+                <button
+                  @click="toggleSelectionMode()"
+                  :class="selectionMode ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700'"
+                  class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50 border border-gray-300"
+                >
+                  <i class="ti ti-checkbox icon mr-1"></i>Select
+                </button>
+              </div>
+            </div>
+
+            <!-- Bulk action toolbar for Docker -->
+            <div
+              x-show="selectionMode && selectedDockerItems.length > 0"
+              class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 shadow-sm"
+            >
+              <span
+                class="text-sm text-blue-800 font-medium"
+                x-text="selectedDockerItems.length + ' selected'"
+              ></span>
+              <div class="flex space-x-2">
+                <button
+                  @click="clearSelection()"
+                  class="px-3 py-1 text-sm text-gray-600 hover:bg-white rounded"
+                >
+                  Clear
+                </button>
+                <button
+                  @click="openDeleteModal()"
+                  class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 flex items-center"
+                >
+                  <i class="ti ti-trash icon mr-1"></i>Delete Selected
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Skeleton loading state -->
+          <div
+            id="docker-loading-skeleton"
+            class="bg-white rounded-lg shadow overflow-hidden animate-pulse"
+            style="display: none"
+          >
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Repository
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Tags
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <template x-for="i in 5" :key="i">
+                  <tr>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="h-4 bg-gray-200 rounded w-48"></div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="h-4 bg-gray-200 rounded w-16"></div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Image overrides table - rendered via JavaScript -->
+          <div id="docker-overrides-container" style="display: none"></div>
+
+          <!-- Actual Docker repos table - rendered directly via JavaScript -->
+          <div id="docker-table-container"></div>
+        </div>
+
+        <!-- URL Cache Tab -->
+        <div x-show="activeTab === 'cache'" x-cloak class="space-y-6">
+          <!-- Sticky header with controls -->
+          <div class="sticky top-0 z-20 bg-gray-50 -mx-4 px-4 py-3 space-y-3">
+            <div class="flex justify-between items-center">
+              <div class="flex items-center space-x-2">
+                <i class="ti ti-database icon text-gray-600"></i>
+                <h2 class="text-2xl font-bold text-gray-900">URL Cache</h2>
+              </div>
+              <div class="flex space-x-2 items-center">
+                <!-- Sort dropdown -->
+                <select
+                  x-model="urlCacheSortBy"
+                  @change="renderURLCacheTable()"
+                  class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                >
+                  <option value="hostname">Sort by Host</option>
+                  <option value="path">Sort by Path</option>
+                  <option value="size">Sort by Size</option>
+                  <option value="cached_at">Sort by Cached Date</option>
+                  <option value="last_accessed">Sort by Last Accessed</option>
+                  <option value="access_count">Sort by Access Count</option>
+                </select>
+                <button
+                  @click="toggleURLCacheSortOrder()"
+                  class="p-2 border border-gray-300 rounded-md hover:bg-gray-50 bg-white"
+                  :title="urlCacheSortOrder === 'asc' ? 'Ascending' : 'Descending'"
+                >
+                  <i
+                    :class="urlCacheSortOrder === 'asc' ? 'ti ti-sort-ascending' : 'ti ti-sort-descending'"
+                    class="icon"
+                  ></i>
+                </button>
+                <div class="relative">
+                  <i
+                    class="ti ti-search icon absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  ></i>
+                  <input
+                    type="text"
+                    x-model="urlCacheSearch"
+                    @input="renderURLCacheTable()"
+                    placeholder="Search URLs..."
+                    class="pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  />
+                </div>
+                <button
+                  @click="toggleSelectionMode()"
+                  :class="selectionMode ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700'"
+                  class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50 border border-gray-300"
+                >
+                  <i class="ti ti-checkbox icon mr-1"></i>Select
+                </button>
+              </div>
+            </div>
+
+            <!-- Bulk action toolbar for URL Cache -->
+            <div
+              x-show="selectionMode && selectedURLCacheItems.length > 0"
+              class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 shadow-sm"
+            >
+              <span
+                class="text-sm text-blue-800 font-medium"
+                x-text="selectedURLCacheItems.length + ' selected'"
+              ></span>
+              <div class="flex space-x-2">
+                <button
+                  @click="clearSelection()"
+                  class="px-3 py-1 text-sm text-gray-600 hover:bg-white rounded"
+                >
+                  Clear
+                </button>
+                <button
+                  @click="openDeleteModal()"
+                  class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 flex items-center"
+                >
+                  <i class="ti ti-trash icon mr-1"></i>Delete Selected
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loading skeleton -->
+          <div
+            x-show="loadingURLCache"
+            class="bg-white rounded-lg shadow overflow-hidden animate-pulse"
+          >
+            <div class="p-4 space-y-3">
+              <template x-for="i in 8" :key="i">
+                <div class="flex items-center space-x-4 p-3 bg-gray-50 rounded">
+                  <div class="h-4 bg-gray-200 rounded w-32"></div>
+                  <div class="h-4 bg-gray-200 rounded w-64 flex-1"></div>
+                  <div class="h-4 bg-gray-200 rounded w-16"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- URL Cache table -->
+          <div
+            x-show="!loadingURLCache"
+            class="bg-white rounded-lg shadow overflow-hidden"
+          >
+            <div class="px-6 py-4 border-b border-gray-200">
+              <div class="text-sm text-gray-600">
+                <span class="font-medium" x-text="urlCacheTotal || 0"></span>
+                cached URLs
+              </div>
+            </div>
+            <div
+              id="url-cache-container"
+              class="p-4"
+              style="max-height: 70vh; overflow-y: auto"
+            >
+              <!-- Rendered by JavaScript -->
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Delete Confirmation Modal -->
+      <div
+        x-show="showDeleteModal"
+        x-cloak
+        class="fixed inset-0 z-50 overflow-y-auto"
+        aria-labelledby="modal-title"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"
+        >
+          <!-- Background overlay -->
+          <div
+            x-show="showDeleteModal"
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="ease-in duration-200"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+            @click="closeDeleteModal()"
+          ></div>
+
+          <!-- Modal panel -->
+          <div
+            x-show="showDeleteModal"
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+            x-transition:leave="ease-in duration-200"
+            x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+            x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6"
+          >
+            <div class="sm:flex sm:items-start">
+              <div
+                class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"
+              >
+                <i class="ti ti-alert-triangle icon text-red-600"></i>
+              </div>
+              <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                <h3
+                  class="text-lg leading-6 font-medium text-gray-900"
+                  id="modal-title"
+                >
+                  Confirm Delete
+                </h3>
+                <div class="mt-2">
+                  <p class="text-sm text-gray-500">
+                    Are you sure you want to delete
+                    <span
+                      class="font-semibold"
+                      x-text="deleteModalItems.length"
+                    ></span>
+                    <span
+                      x-text="deleteModalType === 'packages' ? 'package(s)' : deleteModalType === 'docker' ? 'Docker tag(s)' : 'cached URL(s)'"
+                    ></span
+                    >? This action cannot be undone.
+                  </p>
+                  <div
+                    class="mt-3 max-h-40 overflow-y-auto bg-gray-50 rounded p-2 text-xs"
+                  >
+                    <template x-if="deleteModalType === 'packages'">
+                      <ul class="space-y-1">
+                        <template
+                          x-for="item in deleteModalItems.slice(0, 20)"
+                          :key="item"
+                        >
+                          <li class="text-gray-600 truncate" x-text="item"></li>
+                        </template>
+                        <template x-if="deleteModalItems.length > 20">
+                          <li
+                            class="text-gray-400 italic"
+                            x-text="'...and ' + (deleteModalItems.length - 20) + ' more'"
+                          ></li>
+                        </template>
+                      </ul>
+                    </template>
+                    <template x-if="deleteModalType === 'docker'">
+                      <ul class="space-y-1">
+                        <template
+                          x-for="item in deleteModalItems.slice(0, 20)"
+                          :key="item.repo + ':' + item.tag"
+                        >
+                          <li
+                            class="text-gray-600 truncate"
+                            x-text="item.repo + ':' + item.tag"
+                          ></li>
+                        </template>
+                        <template x-if="deleteModalItems.length > 20">
+                          <li
+                            class="text-gray-400 italic"
+                            x-text="'...and ' + (deleteModalItems.length - 20) + ' more'"
+                          ></li>
+                        </template>
+                      </ul>
+                    </template>
+                    <template x-if="deleteModalType === 'urlcache'">
+                      <ul class="space-y-1">
+                        <template
+                          x-for="item in deleteModalItems.slice(0, 20)"
+                          :key="item.hostname + item.path"
+                        >
+                          <li
+                            class="text-gray-600 truncate"
+                            x-text="item.hostname + item.path"
+                          ></li>
+                        </template>
+                        <template x-if="deleteModalItems.length > 20">
+                          <li
+                            class="text-gray-400 italic"
+                            x-text="'...and ' + (deleteModalItems.length - 20) + ' more'"
+                          ></li>
+                        </template>
+                      </ul>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+              <button
+                @click="confirmBulkDelete()"
+                type="button"
+                class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
+              >
+                Delete
+              </button>
+              <button
+                @click="closeDeleteModal()"
+                type="button"
+                class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/utils.min.js"></script>
+    <script src="js/app.min.js"></script>
+    <script
+      src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
+      defer
+    ></script>
+    <script src="js/fallback.min.js"></script>
+  </body>
+</html>

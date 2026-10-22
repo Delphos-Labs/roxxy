@@ -1,0 +1,488 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-binaries:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux builds
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+          - os: linux
+            arch: arm64
+            goos: linux
+            goarch: arm64
+
+          # macOS builds (cross-compiled from Linux)
+          - os: darwin
+            arch: amd64
+            goos: darwin
+            goarch: amd64
+          - os: darwin
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+
+          # Windows builds (cross-compiled from Linux)
+          - os: windows
+            arch: amd64
+            goos: windows
+            goarch: amd64
+          - os: windows
+            arch: arm64
+            goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install esbuild
+        run: npm ci
+
+      - name: Install Windows build tools
+        if: matrix.os == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0
+
+      - name: Generate Windows icon and resources
+        if: matrix.os == 'windows'
+        run: |
+          # Convert PNG to ICO with multiple sizes
+          convert roxxy_icon.png -define icon:auto-resize=256,128,64,48,32,16 build/windows/roxxy.ico
+
+          # Update version in versioninfo.json
+          VERSION="${GITHUB_REF_NAME#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Update JSON with jq
+          jq --argjson major "$MAJOR" --argjson minor "$MINOR" --argjson patch "$PATCH" --arg version "$VERSION" '
+            .FixedFileInfo.FileVersion.Major = $major |
+            .FixedFileInfo.FileVersion.Minor = $minor |
+            .FixedFileInfo.FileVersion.Patch = $patch |
+            .FixedFileInfo.ProductVersion.Major = $major |
+            .FixedFileInfo.ProductVersion.Minor = $minor |
+            .FixedFileInfo.ProductVersion.Patch = $patch |
+            .StringFileInfo.FileVersion = $version |
+            .StringFileInfo.ProductVersion = $version
+          ' build/windows/versioninfo.json > build/windows/versioninfo.json.tmp
+          mv build/windows/versioninfo.json.tmp build/windows/versioninfo.json
+
+          # Generate .syso resource file for the target architecture
+          if [ "${{ matrix.goarch }}" = "amd64" ]; then
+            goversioninfo -64 -o resource_windows.syso build/windows/versioninfo.json
+          else
+            goversioninfo -arm -o resource_windows.syso build/windows/versioninfo.json
+          fi
+
+      - name: Get build time
+        id: buildtime
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate embedded UI assets
+        run: make generate
+
+      - name: Validate templates
+        run: make validate
+
+      - name: Build roxxy binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-X main.BuildTime=${{ steps.buildtime.outputs.time }} -s -w" -trimpath -o "roxxy-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+
+      - name: Build roar binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-X main.BuildTime=${{ steps.buildtime.outputs.time }} -s -w" -trimpath -o "roar-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/roar
+
+      - name: Build docker-credential-archifau binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-X main.BuildTime=${{ steps.buildtime.outputs.time }} -s -w" -trimpath -o "docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/docker-credential-archifau
+
+      - name: Copy Go runtime license
+        run: |
+          test -s LICENSE
+          test -s THIRD_PARTY_NOTICES.md
+          cp "$(go env GOROOT)/LICENSE" GO_LICENSE
+
+      - name: Create tarball (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          mkdir -p dist
+          # Fail loud on a missing binary: tar exits non-zero but still writes a
+          # partial archive, so without this guard a dropped artifact would ship
+          # in a published, non-draft release. README.md and LICENSE are tracked
+          # files, always present on checkout.
+          for f in \
+            roxxy-${{ matrix.os }}-${{ matrix.arch }} \
+            roar-${{ matrix.os }}-${{ matrix.arch }} \
+            docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }}; do
+            test -f "$f" || { echo "missing required release artifact: $f" >&2; exit 1; }
+          done
+          tar czf dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+            roxxy-${{ matrix.os }}-${{ matrix.arch }} \
+            roar-${{ matrix.os }}-${{ matrix.arch }} \
+            docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }} \
+            README.md \
+            LICENSE \
+            THIRD_PARTY_NOTICES.md \
+            GO_LICENSE
+
+      - name: Create macOS app bundle
+        if: matrix.os == 'darwin'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Create app bundle structure
+          APP_NAME="Roxxy.app"
+          mkdir -p "${APP_NAME}/Contents/MacOS"
+          mkdir -p "${APP_NAME}/Contents/Resources"
+
+          # Copy binary
+          cp roxxy-${{ matrix.os }}-${{ matrix.arch }} "${APP_NAME}/Contents/MacOS/roxxy"
+          chmod +x "${APP_NAME}/Contents/MacOS/roxxy"
+
+          # Copy pre-generated icon (created with macOS iconutil for best quality)
+          cp build/darwin/roxxy.icns "${APP_NAME}/Contents/Resources/roxxy.icns"
+          cp LICENSE THIRD_PARTY_NOTICES.md GO_LICENSE "${APP_NAME}/Contents/Resources/"
+
+          # Create Info.plist with version
+          sed "s/VERSION_PLACEHOLDER/${VERSION}/g" build/darwin/Info.plist.template > "${APP_NAME}/Contents/Info.plist"
+
+          # Create the zip with app bundle and CLI tools
+          mkdir -p dist
+          zip -r dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.zip \
+            "${APP_NAME}" \
+            roxxy-${{ matrix.os }}-${{ matrix.arch }} \
+            roar-${{ matrix.os }}-${{ matrix.arch }} \
+            docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }} \
+            README.md \
+            LICENSE \
+            THIRD_PARTY_NOTICES.md \
+            GO_LICENSE
+
+      - name: Create zip (Windows)
+        if: matrix.os == 'windows'
+        run: |
+          mkdir -p dist
+          zip dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.zip \
+            roxxy-${{ matrix.os }}-${{ matrix.arch }}.exe \
+            roar-${{ matrix.os }}-${{ matrix.arch }}.exe \
+            docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }}.exe \
+            README.md \
+            LICENSE \
+            THIRD_PARTY_NOTICES.md \
+            GO_LICENSE
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: roxxy-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 1
+
+  build-container:
+    name: Build container images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+
+      - name: Get build time
+        id: buildtime
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_TIME=${{ steps.buildtime.outputs.time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          annotations: |
+            index:org.opencontainers.image.description=Roxxy - Package Registry Proxy with caching and SBOM generation
+            index:org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  build-archifau-container:
+    name: Build archifau container image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/archifau
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/archifau/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=archifau
+          cache-to: type=gha,mode=max,scope=archifau
+          annotations: |
+            index:org.opencontainers.image.description=archifau - origin registry (docker + PyPI + bare files) behind GitHub auth
+            index:org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  build-helm-chart:
+    name: Build Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Update chart version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/roxxy/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/roxxy/Chart.yaml
+
+      - name: Lint chart
+        run: helm lint charts/roxxy
+
+      - name: Package chart
+        run: |
+          mkdir -p dist
+          helm package charts/roxxy -d dist/
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: dist/*.tgz
+          retention-days: 1
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-binaries, build-container, build-archifau-container, build-helm-chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          (cd dist && sha256sum -- * > ../SHA256SUMS)
+          mv SHA256SUMS dist/SHA256SUMS
+          cat > release_notes.md << 'EOF'
+          ## Breaking changes
+
+          Before upgrading Archifau, set `ARCHIFAU_HOSTNAME` to the existing registry host, including its port when not 443.
+          Startup now fails if this value is missing. Keep the hostname consistent with existing certificates and client configuration.
+          Compose also requires explicit `ALLOWED_OWNERS`. Preserve your existing authorized GitHub owners.
+          Certificate generation now requires `archifau gencert -hostname <certificate-host>`.
+          Confirm the deployment configuration before restarting. See `cmd/archifau/README.md` for the upgrade checklist.
+
+          The Go module path is now `github.com/Delphos-Labs/roxxy`. Update imports that use the previous module path.
+
+          ## Container Images
+
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:VERSION_PLACEHOLDER
+          ```
+
+          Multi-arch support: `linux/amd64`, `linux/arm64`
+
+          ## Helm Chart
+
+          ```bash
+          helm install roxxy ./roxxy-<version>.tgz
+          ```
+
+          Download the chart tarball from the release assets below.
+
+          ## Binaries
+
+          Download the appropriate binary for your platform below.
+
+          ### Installation
+
+          **Linux:**
+          ```bash
+          ARCH=amd64 # Use arm64 for ARM64 systems
+          tar xzf "roxxy-linux-${ARCH}.tar.gz"
+          sudo mv "roxxy-linux-${ARCH}" /usr/local/bin/roxxy
+          sudo mv "roar-linux-${ARCH}" /usr/local/bin/roar
+          # docker-credential-archifau must keep this exact name on PATH for docker to find it
+          sudo mv "docker-credential-archifau-linux-${ARCH}" /usr/local/bin/docker-credential-archifau
+          ```
+
+          **macOS:**
+          ```bash
+          ARCH=arm64 # Use amd64 for Intel systems
+          unzip "roxxy-darwin-${ARCH}.zip"
+          sudo mv "roxxy-darwin-${ARCH}" /usr/local/bin/roxxy
+          sudo mv "roar-darwin-${ARCH}" /usr/local/bin/roar
+          sudo mv "docker-credential-archifau-darwin-${ARCH}" /usr/local/bin/docker-credential-archifau
+          ```
+
+          **Windows:**
+          ```powershell
+          Expand-Archive roxxy-*.zip
+          # Move roxxy.exe, roar.exe, and docker-credential-archifau.exe to your PATH
+          ```
+
+          The credential helper is inert until it is on PATH as `docker-credential-archifau`
+          and registered in `~/.docker/config.json`:
+          ```json
+          {"credHelpers": {"registry.example.com": "archifau"}}
+          ```
+
+          Replace `registry.example.com` with your configured registry host, including its port when not 443.
+          Configure the helper only for a registry you intend to authenticate to and whose TLS certificate you trust.
+
+          ## Checksums
+
+          Download `SHA256SUMS` alongside the release archives.
+          On Linux, verify downloaded assets with `sha256sum --check --ignore-missing SHA256SUMS` from that directory.
+          To verify every asset, download them all and run `sha256sum --check SHA256SUMS`.
+          EOF
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" release_notes.md
+          {
+            printf '\n```text\n'
+            cat dist/SHA256SUMS
+            printf '```\n'
+          } >> release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

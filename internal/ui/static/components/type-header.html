@@ -1,0 +1,12 @@
+<!-- Type Header Component -->
+<button 
+    @click.prevent="toggleType(type)"
+    type="button"
+    class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-left">
+    <div class="flex items-center space-x-3">
+        <i :class="getTypeIcon(type)" class="icon text-gray-600"></i>
+        <span class="font-semibold text-gray-900 capitalize" x-text="type"></span>
+        <span class="text-sm text-gray-500" x-text="`(${(packageTree[type] && packageTree[type].count) || 0} packages)`"></span>
+    </div>
+    <i :class="expandedTypes[type] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" class="icon text-gray-400"></i>
+</button>

@@ -1,0 +1,28 @@
+<!-- Version Item Component -->
+<div x-show="packageMatchesSearch(pkgName, pkg.version)" 
+     class="px-4 py-2 bg-white border border-gray-100 rounded hover:bg-gray-50 transition-colors" 
+     :class="{'cursor-pointer': (type === 'npm' || type === 'pypi' || type === 'go' || type === 'apk') && pkg.name && pkg.version && !pkg.loadingMetadata}"
+     @click="(type === 'npm' && pkg.cached && !pkg.loadingMetadata && loadNPMMetadata(pkg, $event)) || (type === 'pypi' && pkg.name && pkg.version && !pkg.loadingMetadata && loadPyPIMetadata(pkg, $event)) || (type === 'go' && pkg.name && pkg.version && !pkg.loadingMetadata && loadGoMetadata(pkg, $event)) || (type === 'apk' && pkg.name && pkg.version && !pkg.loadingMetadata && loadAPKMetadata(pkg, $event))">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-4 flex-1 flex-wrap">
+            <span class="text-sm font-medium text-gray-900" x-text="pkg.version || 'N/A'"></span>
+            <span class="text-xs text-gray-500" x-text="formatBytes(pkg.size)"></span>
+            <span x-show="pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <i class="ti ti-check icon mr-1"></i>
+                <span>Cached</span>
+            </span>
+            <span x-show="!pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                <i class="ti ti-cloud icon mr-1"></i>
+                <span>Available</span>
+            </span>
+            <span x-show="pkg.access_count > 0" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" x-text="`${pkg.access_count}x`"></span>
+            <span x-show="pkg.cached_at" class="text-xs text-gray-400" x-text="formatDate(pkg.cached_at)"></span>
+            <span x-show="(type === 'npm' || type === 'pypi' || type === 'go' || type === 'apk') && pkg.loadingMetadata" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                <i class="ti ti-loader icon mr-1 animate-spin"></i>
+                <span>Loading...</span>
+            </span>
+            <span x-show="(type === 'npm' && pkg.cached && !pkg.loadingMetadata && !pkg.metadata) || ((type === 'pypi' || type === 'go' || type === 'apk') && pkg.name && pkg.version && !pkg.loadingMetadata && !pkg.metadata)" class="text-xs text-gray-400 italic">(click to load metadata)</span>
+        </div>
+    </div>
+    <!-- Version-specific metadata (included via version-metadata component) -->
+</div>

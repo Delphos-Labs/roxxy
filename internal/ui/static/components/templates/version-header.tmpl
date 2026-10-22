@@ -1,0 +1,27 @@
+{{/* Version Header Template */}}
+{{define "version-header"}}
+<div class="flex items-center justify-between">
+    <div class="flex items-center space-x-4 flex-1 flex-wrap">
+        <span class="text-sm font-medium text-gray-900" x-text="pkg.version || 'N/A'"></span>
+        {{if .isFlat}}<span x-show="pkg.version === 'N/A'" class="text-xs text-gray-400 italic" x-text="`ID: ${pkg.id ? (pkg.id.split('/').pop() || pkg.id) : (pkg.version || 'N/A')}`"></span>{{end}}
+        <span class="text-xs text-gray-500" x-text="formatBytes(pkg.size)"></span>
+        <span x-show="pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <i class="ti ti-check icon mr-1"></i>
+            <span>Cached</span>
+        </span>
+        <span x-show="!pkg.cached" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+            <i class="ti ti-cloud icon mr-1"></i>
+            <span>Available</span>
+        </span>
+        <span x-show="pkg.access_count > 0" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" x-text="`${pkg.access_count}x`"></span>
+        <span x-show="pkg.cached_at" class="text-xs text-gray-400" x-text="formatDate(pkg.cached_at)"></span>
+        {{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}
+        <span x-show="pkg.loadingMetadata" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <i class="ti ti-loader icon mr-1 animate-spin"></i>
+            <span>Loading...</span>
+        </span>
+        <span x-show="{{if eq .type "npm"}}pkg.cached && !pkg.loadingMetadata && !pkg.metadata{{else}}pkg.name && pkg.version && !pkg.loadingMetadata && !pkg.metadata{{end}}" class="text-xs text-gray-400 italic">(click to load metadata)</span>
+        {{end}}
+    </div>
+</div>
+{{end}}

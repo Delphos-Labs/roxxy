@@ -1,0 +1,40 @@
+{{/* Package Component Template - Reusable for all package rendering */}}
+{{define "package-component"}}
+<div x-data="{ 
+    pkgName: pkgName, 
+    pkgGroup: pkgGroup, 
+    pkgPath: {{if .groupPath}}pkgGroup.fullName || `${groupPath}/${pkgName}`{{else}}pkgGroup.fullName || pkgName{{end}}
+}">
+    <!-- Package Button -->
+    <button 
+        @click.prevent="togglePackage('{{.type}}', pkgPath)"
+        type="button"
+        class="w-full flex items-center justify-between px-4 py-2 bg-white hover:bg-gray-50 rounded transition-colors text-left">
+        <div class="flex items-center space-x-2 flex-1">
+            <span class="text-sm font-medium text-gray-700" {{if eq .type "go"}}x-text="formatGoPackageName(pkgName, '{{.type}}') || 'N/A'"{{else}}x-text="pkgName || 'N/A'"{{end}}></span>
+            <span class="text-xs text-gray-500 ml-2" x-text="(() => { 
+                const hasVersions = pkgGroup.versions && pkgGroup.versions.length > 0;
+                const hasSubPackages = pkgGroup.packages && Object.keys(pkgGroup.packages).length > 0;
+                if (hasVersions) {
+                    const count = pkgGroup.versions.length;
+                    return `(${count} version${count !== 1 ? 's' : ''})`;
+                } else if (hasSubPackages) {
+                    const count = Object.keys(pkgGroup.packages).length;
+                    return `(${count} package${count !== 1 ? 's' : ''})`;
+                } else {
+                    const count = pkgGroup.count !== undefined ? pkgGroup.count : 0;
+                    return `(${count} version${count !== 1 ? 's' : ''})`;
+                }
+            })()"></span>
+        </div>
+        <i :class="expandedPackages[`{{.type}}:${pkgPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" class="icon text-gray-400 text-xs"></i>
+    </button>
+    
+    <!-- Package Content -->
+    <div x-show="expandedPackages[`{{.type}}:${pkgPath}`] === true" x-cloak class="ml-4 mt-1 space-y-1">
+        {{template "package-metadata" .}}
+        {{template "package-versions" .}}
+        {{if eq .type "go"}}{{template "package-subpackages" .}}{{end}}
+    </div>
+</div>
+{{end}}

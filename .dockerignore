@@ -1,0 +1,90 @@
+# Git directory (large history)
+.git/
+.gitignore
+
+# Private audit evidence and agent session state
+.local/
+.do-work/
+
+# Build artifacts and binaries
+roxxy
+roar
+roxxy-test
+main
+lscache
+lsembed
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files and coverage
+test/
+*_test.go
+coverage.out
+*.test
+
+# Documentation (not needed for build)
+docs/
+README.md
+*.md
+
+# Cache and temporary files
+cache/
+*.tar
+*.tar.gz
+*.tgz
+docker*.tar*
+
+# Certificates (handled separately in Dockerfile if needed)
+certs/*.pem
+certs/*.crt
+certs/*.key
+certs/*.csr
+
+# Backup files
+*.bak
+*.bak2
+*.orig
+*~
+
+# Node modules (if any)
+node_modules/
+
+# Log files
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build scripts (not needed in image)
+build.sh
+build-test.sh
+clean.sh
+setup-native.sh
+
+# Docker compose files (not needed in image)
+docker-compose*.yml
+docker-compose*.yaml
+docker/*.sh
+
+# Config files (may be mounted as volumes)
+config.yaml
+*.yaml
+*.yml
+
+# Coverage and test artifacts
+*.out
+*.prof
+
+# Application license materials must reach the release image stages.
+!LICENSE
+!THIRD_PARTY_NOTICES.md

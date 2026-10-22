@@ -1,0 +1,283 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  public-endpoints:
+    name: Public Endpoint Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Test endpoint check
+        run: bash test/test-public-endpoints.sh
+
+      - name: Check tracked source
+        run: bash scripts/check-public-endpoints.sh
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install esbuild
+        run: npm ci
+
+      - name: Test build and release tooling
+        run: |
+          node --test test/test-build-js.js
+          python3 test/test-release-checksums.py
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Validate templates
+        run: make validate
+
+      - name: Build
+        run: make build
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
+          args: --timeout=5m
+
+  build-test:
+    name: Cross-compile Test (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+          - os: linux
+            arch: arm64
+            goos: linux
+            goarch: arm64
+          - os: darwin
+            arch: amd64
+            goos: darwin
+            goarch: amd64
+          - os: darwin
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+          - os: windows
+            arch: amd64
+            goos: windows
+            goarch: amd64
+          - os: windows
+            arch: arm64
+            goos: windows
+            goarch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install esbuild
+        run: npm ci
+
+      - name: Generate embedded UI assets
+        run: make generate
+
+      - name: Install Windows build tools
+        if: matrix.os == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0
+
+      - name: Generate Windows resources
+        if: matrix.os == 'windows'
+        run: |
+          # Convert PNG to ICO
+          convert roxxy_icon.png -define icon:auto-resize=256,128,64,48,32,16 build/windows/roxxy.ico
+
+          # Generate .syso resource file
+          if [ "${{ matrix.goarch }}" = "amd64" ]; then
+            goversioninfo -64 -o resource_windows.syso build/windows/versioninfo.json
+          else
+            goversioninfo -arm -o resource_windows.syso build/windows/versioninfo.json
+          fi
+
+      - name: Cross-compile roxxy
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-s -w" -trimpath -o "roxxy-${{ matrix.os }}-${{ matrix.arch }}${EXT}" .
+
+      - name: Cross-compile roar
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-s -w" -trimpath -o "roar-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/roar
+
+      - name: Cross-compile archifau
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-s -w" -trimpath -o "archifau-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/archifau
+
+      - name: Cross-compile docker-credential-archifau
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-s -w" -trimpath -o "docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd/docker-credential-archifau
+
+      - name: Verify binaries
+        run: |
+          ls -la roxxy-* roar-* archifau-* docker-credential-archifau-*
+          file roxxy-${{ matrix.os }}-${{ matrix.arch }}* roar-${{ matrix.os }}-${{ matrix.arch }}* archifau-${{ matrix.os }}-${{ matrix.arch }}* docker-credential-archifau-${{ matrix.os }}-${{ matrix.arch }}*
+
+      - name: Test macOS app bundle creation
+        if: matrix.os == 'darwin'
+        run: |
+          # Verify icns file exists
+          test -f build/darwin/roxxy.icns || (echo "Missing roxxy.icns" && exit 1)
+          test -f build/darwin/Info.plist.template || (echo "Missing Info.plist.template" && exit 1)
+
+          # Create app bundle
+          APP_NAME="Roxxy.app"
+          mkdir -p "${APP_NAME}/Contents/MacOS"
+          mkdir -p "${APP_NAME}/Contents/Resources"
+          cp roxxy-${{ matrix.os }}-${{ matrix.arch }} "${APP_NAME}/Contents/MacOS/roxxy"
+          chmod +x "${APP_NAME}/Contents/MacOS/roxxy"
+          cp build/darwin/roxxy.icns "${APP_NAME}/Contents/Resources/roxxy.icns"
+          sed "s/VERSION_PLACEHOLDER/0.0.0-test/g" build/darwin/Info.plist.template > "${APP_NAME}/Contents/Info.plist"
+
+          # Verify bundle structure
+          test -f "${APP_NAME}/Contents/MacOS/roxxy" || (echo "Missing binary in bundle" && exit 1)
+          test -f "${APP_NAME}/Contents/Resources/roxxy.icns" || (echo "Missing icon in bundle" && exit 1)
+          test -f "${APP_NAME}/Contents/Info.plist" || (echo "Missing Info.plist" && exit 1)
+          echo "macOS app bundle created successfully"
+
+      - name: Test archive creation
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            tar czf dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+              roxxy-${{ matrix.os }}-${{ matrix.arch }} \
+              roar-${{ matrix.os }}-${{ matrix.arch }} \
+              README.md
+          elif [ "${{ matrix.os }}" = "darwin" ]; then
+            zip -r dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.zip \
+              Roxxy.app \
+              roxxy-${{ matrix.os }}-${{ matrix.arch }} \
+              roar-${{ matrix.os }}-${{ matrix.arch }} \
+              README.md
+          else
+            zip dist/roxxy-${{ matrix.os }}-${{ matrix.arch }}.zip \
+              roxxy-${{ matrix.os }}-${{ matrix.arch }}.exe \
+              roar-${{ matrix.os }}-${{ matrix.arch }}.exe \
+              README.md
+          fi
+          ls -la dist/
+
+  helm-lint:
+    name: Helm Lint & Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint chart
+        run: helm lint charts/roxxy
+
+      - name: Template chart
+        run: helm template roxxy charts/roxxy --debug
+
+      - name: Package chart
+        run: |
+          mkdir -p dist
+          helm package charts/roxxy -d dist/
+          ls -la dist/
+          echo "Chart packaged successfully"
+
+      - name: Verify chart contents
+        run: |
+          tar -tzf dist/roxxy-*.tgz | head -20
+          echo "Chart contents verified"

@@ -1,0 +1,33 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To get the proxy URL, run:
+
+{{- if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "roxxy.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "Proxy URL: http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+        Watch the status with: kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "roxxy.fullname" . }}
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "roxxy.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo "Proxy URL: http://$SERVICE_IP:{{ .Values.service.proxyPort }}"
+{{- else if contains "ClusterIP" .Values.service.type }}
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "roxxy.fullname" . }} {{ .Values.service.proxyPort }}:{{ .Values.service.proxyPort }}
+  echo "Proxy URL: http://127.0.0.1:{{ .Values.service.proxyPort }}"
+{{- end }}
+
+To configure clients to use this proxy, set:
+  HTTP_PROXY=http://{{ include "roxxy.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.proxyPort }}
+  HTTPS_PROXY=http://{{ include "roxxy.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.proxyPort }}
+
+{{- if or .Values.caCert.create .Values.caCert.existingSecret }}
+
+To retrieve the CA certificate for client trust:
+  kubectl get secret --namespace {{ .Release.Namespace }} {{ include "roxxy.caCertSecretName" . }} -o jsonpath="{.data.ca-cert\.pem}" | base64 -d
+{{- else }}
+
+NOTE: No CA certificate secret is configured. Roxxy will generate certificates on startup.
+      For production use, configure caCert.existingSecret or caCert.create with your certificates.
+{{- end }}

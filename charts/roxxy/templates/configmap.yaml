@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "roxxy.fullname" . }}-config
+  labels:
+    {{- include "roxxy.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    global:
+      cache_dir: {{ .Values.config.global.cacheDir }}
+      certs_dir: {{ .Values.config.global.certsDir }}
+      listen_addr: {{ .Values.config.global.listenAddr }}
+      {{- if or .Values.config.global.localHostnames .Values.config.global.autoLocalHostnames }}
+      local_hostnames:
+        {{- if .Values.config.global.autoLocalHostnames }}
+        {{- $fullname := include "roxxy.fullname" . }}
+        - {{ $fullname }}
+        - {{ $fullname }}.{{ .Release.Namespace }}
+        - {{ $fullname }}.{{ .Release.Namespace }}.svc
+        - {{ $fullname }}.{{ .Release.Namespace }}.svc.cluster.local
+        {{- end }}
+        {{- range .Values.config.global.localHostnames }}
+        - {{ . }}
+        {{- end }}
+      {{- end }}
+    {{- if .Values.config.packageManagers }}
+    package_managers:
+      {{- range .Values.config.packageManagers }}
+      - type: {{ .type }}
+        upstream_url: {{ .upstream_url | quote }}
+        hostnames:
+          {{- range .hostnames }}
+          - {{ . }}
+          {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.config.dockerRegistries }}
+    docker_registries:
+      {{- range .Values.config.dockerRegistries }}
+      - upstream_url: {{ .upstream_url | quote }}
+        hostnames:
+          {{- range .hostnames }}
+          - {{ . }}
+          {{- end }}
+        {{- if .proxy_pushes }}
+        proxy_pushes: {{ .proxy_pushes }}
+        {{- end }}
+        {{- if .local_only_paths }}
+        local_only_paths:
+          {{- range .local_only_paths }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}

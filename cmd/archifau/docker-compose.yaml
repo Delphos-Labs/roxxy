@@ -1,0 +1,72 @@
+# archifau — docker registry + PyPI registry + file store behind GitHub
+# OIDC auth. One service, one fixed certificate, no proxying.
+#
+# Setup:
+#   1. Put the server certificate pair in ./certs (default; override with
+#      ARCHIFAU_CERTS_DIR). For local testing, sign one with a trusted CA:
+#        go run ./cmd/archifau gencert \
+#          -ca-cert <CA.pem> -ca-key <CA-key.pem> \
+#          -hostname registry.example.com -out-prefix certs/archifau
+#   2. Set ARCHIFAU_HOSTNAME and ALLOWED_OWNERS for your deployment.
+#      Replace the example hostname with one your clients resolve and trust.
+#   3. docker compose up -d --build
+#
+# Building behind a TLS-intercepting proxy (roxxy, corporate MITM): drop the
+# intercepting CA as a *.crt into ../../docker/archifau/ca-certs/ first.
+#
+# Validate after editing: docker compose config -q
+
+services:
+  archifau:
+    build:
+      # Context is the repo root: the Dockerfile compiles cmd/archifau and
+      # needs go.mod plus the internal/ packages.
+      context: ../..
+      dockerfile: docker/archifau/Dockerfile
+    image: archifau:latest
+    init: true
+    # Nothing writes outside /data (named volume) and /tmp.
+    read_only: true
+    # PyPI uploads beyond the 64 MiB multipart memory threshold spool to /tmp.
+    tmpfs:
+      - /tmp
+    ports:
+      - "${ARCHIFAU_PORT:-8443}:8443"
+    environment:
+      ARCHIFAU_HOSTNAME: ${ARCHIFAU_HOSTNAME:?Set ARCHIFAU_HOSTNAME to the registry host and optional port}
+      # GitHub orgs/users whose CI jobs and members may authenticate.
+      ALLOWED_OWNERS: ${ALLOWED_OWNERS:?Set ALLOWED_OWNERS to authorized GitHub orgs/users}
+      ARCHIFAU_TLS_CERT: /certs/archifau-cert.pem
+      ARCHIFAU_TLS_KEY: /certs/archifau-key.pem
+      # Empty means a random per-process secret: minted tokens die on
+      # restart and clients silently re-exchange. Set it (e.g. via .env)
+      # only for multi-replica setups.
+      ARCHIFAU_TOKEN_SECRET: ${ARCHIFAU_TOKEN_SECRET:-}
+      # Optional S3 second level (durable CAS behind the local volume).
+      # Unset bucket = disabled. Credentials via the standard AWS_* chain;
+      # with IRSA/instance roles only bucket + region are needed.
+      ARCHIFAU_S3_BUCKET: ${ARCHIFAU_S3_BUCKET:-}
+      ARCHIFAU_S3_PREFIX: ${ARCHIFAU_S3_PREFIX:-}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    volumes:
+      - archifau-data:/data
+      - ${ARCHIFAU_CERTS_DIR:-./certs}:/certs:ro
+    healthcheck:
+      # Mirrors the image HEALTHCHECK; kept explicit so `--wait` behavior is
+      # visible here. HTTP fallback covers ARCHIFAU_INSECURE_HTTP=1 testing.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --no-check-certificate -O /dev/null https://127.0.0.1:8443/healthz || wget -q -O /dev/null http://127.0.0.1:8443/healthz",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  archifau-data:

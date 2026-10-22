@@ -1,0 +1,234 @@
+# Roxxy Registry Proxy Configuration
+# 
+# Config file locations (in order of priority):
+#   1. ./config.yaml (current directory)
+#   2. ~/.roxxy.conf
+#   3. Platform-specific config.yaml:
+#      - macOS: ~/Library/Application Support/roxxy/config.yaml
+#      - Windows: %APPDATA%/roxxy/config.yaml
+#      - Linux: ~/.roxxy/config.yaml
+
+# Global configuration
+global:
+  # Cache directory - where all cached data is stored
+  # Default: /app/cache (Docker) or platform-specific location (native)
+  #   - macOS: ~/Library/Application Support/roxxy/Cache
+  #   - Windows: %APPDATA%/roxxy/Cache
+  #   - Linux: ~/.cache/roxxy (or $XDG_CACHE_HOME/roxxy if set)
+  # You can override to use a different location (e.g., /data/roxxy/cache, /var/roxxy/cache)
+  # cache_dir: /data/roxxy/cache
+  
+  # Certificates directory - CA cert and key for MITM TLS
+  # Default: /app/certs (Docker) or platform-specific (native)
+  # certs_dir: ~/.roxxy/certs
+  
+  # Log directory - where log files are written (only used when running natively, not in Docker)
+  # Default: /app/logs (Docker) or platform-specific (native)
+  #   - macOS: ~/Library/Logs/roxxy
+  #   - Windows: %APPDATA%/roxxy/Logs
+  #   - Linux: ~/.local/state/roxxy/logs (or $XDG_STATE_HOME/roxxy/logs if set)
+  # log_dir: ~/.local/state/roxxy/logs
+  
+  # Listen address for the proxy server
+  # Default: :3128
+  # listen_addr: :3128
+  
+  # Docker platforms to exclude when pulling multi-arch images
+  # These platforms are automatically skipped when pulling images without specifying --platform
+  # Default: empty (all platforms are pulled by default)
+  # Example: to exclude less common architectures:
+  # excluded_platforms:
+  #   - linux/arm/v6
+  #   - linux/arm/v7
+  #   - linux/386
+  #   - linux/ppc64le
+  #   - linux/riscv64
+  #   - linux/s390x
+
+registries:
+  # Package manager proxies (NPM, PyPI, APK, APT, Go modules)
+  # are configured in the package_managers section below
+
+  # Local filesystem cache for binary files (content-addressable storage)
+  # url/HASH(URL) -> metadata with content hash
+  # content/H/A/S/HASH(content) -> actual file content
+  binaries.prisma.sh:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  unofficial-builds.npmjs.org:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum (Node.js binaries are large)
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  gentoo.osuosl.org:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  dl.google.com:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  mirror.leaseweb.com:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  distfiles.gentoo.org:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  release-assets.githubusercontent.com:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+  7-zip.org:
+    cache_type: "local"
+    min_cache_size: 1048576  # 1MB minimum
+    exclude_extensions: [".js", ".css", ".html", ".htm", ".json", ".xml"]
+
+# Package Manager Proxies
+# Configure package manager proxies (NPM, PyPI, APK, APT, Go modules)
+# These handle caching for package manager requests via HTTP_PROXY
+package_managers:
+  # Alpine Linux APK packages
+  - type: apk
+    upstream_url: "https://dl-cdn.alpinelinux.org"
+    hostnames:
+      - dl-cdn.alpinelinux.org
+      - dl-2.alpinelinux.org
+      - dl-3.alpinelinux.org
+      - dl-4.alpinelinux.org
+      - dl-5.alpinelinux.org
+      - alpinelinux.org
+
+  # Ubuntu APT packages
+  - type: apt
+    upstream_url: "http://archive.ubuntu.com"
+    hostnames:
+      - archive.ubuntu.com
+      - security.ubuntu.com
+      - old-releases.ubuntu.com
+
+  # Ubuntu Ports APT packages
+  - type: apt
+    upstream_url: "http://ports.ubuntu.com"
+    hostnames:
+      - ports.ubuntu.com
+
+  # Debian APT packages
+  - type: apt
+    upstream_url: "http://deb.debian.org"
+    hostnames:
+      - deb.debian.org
+      - ftp.debian.org
+
+  # Debian Security APT packages
+  - type: apt
+    upstream_url: "http://security.debian.org"
+    hostnames:
+      - security.debian.org
+
+  # PostgreSQL APT packages
+  - type: apt
+    upstream_url: "https://apt.postgresql.org"
+    hostnames:
+      - apt.postgresql.org
+
+  # NPM Registry (Node.js packages)
+  - type: npm
+    upstream_url: "https://registry.npmjs.org"
+    hostnames:
+      - registry.npmjs.org
+
+  # PyPI Registry (Python packages)
+  - type: pypi
+    upstream_url: "https://pypi.org"
+    hostnames:
+      - pypi.org
+      - files.pythonhosted.org
+
+  # Go Modules Proxy
+  - type: go
+    upstream_url: "https://proxy.golang.org"
+    hostnames:
+      - proxy.golang.org
+      - proxy.golang.com
+
+# Docker Registry Proxies
+# Configure Docker registry proxies (docker.io, quay.io, ghcr.io, etc.)
+# These handle caching for Docker registry requests via CONNECT/SNI
+# Push operations are stored locally by default. Set proxy_pushes: true to proxy pushes to upstream.
+docker_registries:
+  # Docker Hub
+  # By default, pushes are stored locally. To enable pushing to Docker Hub, set proxy_pushes: true
+  - upstream_url: "https://registry-1.docker.io"
+    hostnames:
+      - docker.io
+      - registry-1.docker.io
+      - index.docker.io
+    # proxy_pushes: false  # Default: store pushes locally
+    # proxy_pushes: true   # Uncomment to proxy pushes to Docker Hub (requires authentication)
+    #
+    # local_only_paths is intentionally absent. The manualdev launch
+    # uses --airgap-proxy (see deploy/roxxy-manualdev-cache.compose.yml),
+    # which treats every path as local + pushable so upstream images
+    # can be cached at their NATURAL paths (registry.k8s.io/kubectl,
+    # docker.io/library/redis, etc.) without per-prefix allow-listing
+    # or synthetic-namespace remapping.
+
+  # Quay.io (Red Hat container registry)
+  - upstream_url: "https://quay.io"
+    hostnames:
+      - quay.io
+
+  # GitHub Container Registry
+  - upstream_url: "https://ghcr.io"
+    hostnames:
+      - ghcr.io
+
+  # Kubernetes Registry
+  - upstream_url: "https://registry.k8s.io"
+    hostnames:
+      - registry.k8s.io
+
+  # NVIDIA Container Registry
+  - upstream_url: "https://nvcr.io"
+    hostnames:
+      - nvcr.io
+
+  # Local-only registry for custom namespaces (e.g., delphos)
+  # This registry only checks local storage, never fetches from upstream
+  # Useful for custom images that should never go to Docker Hub
+  - upstream_url: ""  # Empty = local-only, no upstream
+    hostnames:
+      - delphos.local
+      - delphos-registry.local
+
+# Snapshot-archive ingestion (Stage 1).
+# When url is set, roxxy periodically pulls signed package-index
+# snapshots from a snapshot-archive service and stores them in a local
+# mirror under <cache_dir>/archive/. This is Stage 1 work; the serve
+# path doesn't yet consult the mirror — that lands in Stage 2.
+#
+# archive:
+#   url: http://localhost:8080
+#   pubkey_fingerprint: B5327C3876D816A48E20DABB4037AF80B8E337D0
+#   refresh_interval: 1h
+#   blocklist_refresh_interval: 5m
+#   tracked_paths:
+#     - pypi/pypi.org/simple/requests/index.html
+#     - go/proxy.golang.org/github.com/gin-gonic/gin/@latest
+
+# Per-format index quarantine delays (Stage 2 will consult these).
+# Keys: "default", "apt_debian", "apt_ubuntu", "pypi", "npm", "go", "apk".
+#
+# index:
+#   delay_days:
+#     default: 7
+#     apt_debian: 4

@@ -1,0 +1,40 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 0,
+      "Minor": 10,
+      "Patch": 0,
+      "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0,
+      "Minor": 10,
+      "Patch": 0,
+      "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "Intelligent HTTPS proxy and registry cache manager",
+    "CompanyName": "Delphos",
+    "FileDescription": "Roxxy - Package Registry Proxy",
+    "FileVersion": "0.10.0",
+    "InternalName": "roxxy",
+    "LegalCopyright": "Copyright (c) Delphos",
+    "OriginalFilename": "roxxy.exe",
+    "ProductName": "Roxxy",
+    "ProductVersion": "0.10.0"
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  },
+  "IconPath": "build/windows/roxxy.ico",
+  "ManifestPath": ""
+}

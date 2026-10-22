@@ -1,0 +1,16 @@
+{{/* Package Versions Template */}}
+{{define "package-versions"}}
+<template x-if="pkgGroup.versions && pkgGroup.versions.length > 0">
+    <div>
+        <template x-for="pkg in pkgGroup.versions" :key="pkg.id || (pkg.version + (pkg.architecture ? `:${pkg.architecture}` : ''))">
+            <div x-show="packageMatchesSearch(pkgName, pkg.version)" 
+                 class="px-4 py-2 bg-white border border-gray-100 rounded hover:bg-gray-50 transition-colors" 
+                 {{if or (eq .type "npm") (eq .type "pypi") (eq .type "go") (eq .type "apk")}}:class="{'cursor-pointer': pkg.name && pkg.version && !pkg.loadingMetadata}"{{end}}
+                 {{template "version-click-handler" .}}>
+                {{template "version-header" .}}
+                {{template "version-metadata" .}}
+            </div>
+        </template>
+    </div>
+</template>
+{{end}}

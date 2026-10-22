@@ -1,0 +1,15 @@
+<!-- Group Button Component -->
+<!-- Usage: x-data="{ groupPath: '...', depth: 0 }" -->
+<button 
+    @click.prevent="toggleGroup(type, groupPath)"
+    type="button"
+    :class="`w-full flex items-center justify-between px-3 py-2 ${getGroupColors(depth).bgColor} ${getGroupColors(depth).hoverColor} rounded transition-colors text-left mb-1`">
+    <div class="flex items-center space-x-2">
+        <i :class="expandedGroups[`${type}:${groupPath}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" 
+           :class="`icon ${getGroupColors(depth).iconColor} text-xs`"></i>
+        <span :class="`text-xs font-medium ${getGroupColors(depth).textColor}`" 
+              x-text="type === 'go' ? formatGoPackageName(groupKey, type) : groupKey"></span>
+        <span :class="`text-xs ${getGroupColors(depth).iconColor}`" 
+              x-text="`(${groupData.count || 0} packages)`"></span>
+    </div>
+</button>

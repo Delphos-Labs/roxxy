@@ -1,0 +1,74 @@
+FROM golang:1.25-alpine AS builder
+RUN HTTP_PROXY= HTTPS_PROXY= apk add --no-cache ca-certificates nodejs npm
+COPY certs/ca-cert.pem /usr/local/share/ca-certificates/nexus-ca.crt
+RUN chmod 644 /usr/local/share/ca-certificates/nexus-ca.crt && update-ca-certificates
+
+WORKDIR /build
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy all source files first (including UI files)
+COPY go.mod go.sum ./
+COPY *.go ./
+COPY internal/ ./internal/
+COPY cmd/ ./cmd/
+# Use proxy for Go module operations (this tests that the proxy works correctly)
+RUN go mod download
+
+# Generate embedded UI assets (minifies js/*.js -> js/*.min.js via build-js.js)
+RUN go generate ./...
+
+# Build roxxy server (static binary, no CGO)
+# Set BuildTime during build
+ARG BUILD_TIME=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s -X main.BuildTime=$BUILD_TIME" -o roxxy .
+
+# Create hardlinks for convenience commands
+# The binary can create hardlinks to itself
+RUN ./roxxy hardlink
+
+# Final scratch image
+FROM scratch
+
+# Copy CA certificates from builder stage (required for HTTPS connections to upstream)
+# The builder stage already has ca-certificates installed and updated
+# Go's TLS library looks for certificates in /etc/ssl/certs/ca-certificates.crt
+# COPY automatically creates the directory structure
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# Set environment variable so Go's TLS library can find the certificates
+# This ensures Go can locate the CA bundle in scratch containers
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+# Copy binary
+COPY --from=builder /build/roxxy /app/roxxy
+
+# Copy hardlinks (created in /usr/bin/ by the hardlink command)
+# These are convenience commands - the binary also supports subcommands like /app/roxxy docker ls
+# Note: 'raw' is copied as /app/raw (not /app/cache) since /app/cache is a directory for cache data
+COPY --from=builder /usr/bin/docker /app/docker
+COPY --from=builder /usr/bin/raw /app/raw
+COPY --from=builder /usr/bin/package /app/package
+COPY --from=builder /usr/bin/embed /app/embed
+
+WORKDIR /app
+
+EXPOSE 3128 443
+
+# Cache bootstrap support (similar to PostgreSQL's /docker-entrypoint-initdb.d/)
+# Mount tarballs to /docker-entrypoint-initcache.d/ to bootstrap cache on first startup
+# The directory will be created automatically when a volume is mounted
+# Example: -v /path/to/cache.tar.gz:/docker-entrypoint-initcache.d/01-cache.tar.gz
+# Or use environment variable: -e ROXXY_CACHE_INIT_TARBALL=/path/to/cache.tar.gz
+
+# Run roxxy directly (no supervisord in scratch)
+# All commands are built into the single binary:
+#   /app/roxxy server    - Start server (default)
+#   /app/roxxy cache ls  - List cache
+#   /app/roxxy docker ls - List Docker images
+#   /app/roxxy docker rmi <image> - Remove Docker image
+#   /app/roxxy package ls - List packages
+#   /app/roxxy embed ls  - List embedded files
+ENTRYPOINT ["/app/roxxy"]
+CMD ["server"]

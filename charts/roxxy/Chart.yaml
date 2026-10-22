@@ -1,0 +1,21 @@
+apiVersion: v2
+name: roxxy
+description: Intelligent HTTPS proxy and registry cache manager
+type: application
+version: 0.1.0
+appVersion: "0.10.0"
+keywords:
+  - proxy
+  - cache
+  - docker
+  - registry
+  - npm
+  - apt
+  - apk
+  - pypi
+home: https://github.com/Delphos-Labs/roxxy
+sources:
+  - https://github.com/Delphos-Labs/roxxy
+icon: https://raw.githubusercontent.com/Delphos-Labs/roxxy/main/roxxy_icon.png
+maintainers:
+  - name: Delphos

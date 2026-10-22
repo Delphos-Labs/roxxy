@@ -1,0 +1,63 @@
+<!-- Version Metadata Component -->
+<!-- Show version-specific license/description if available (from index) -->
+<div x-show="pkg.license || (type !== 'apt' && pkg.description)" class="mt-1 pt-1 border-t border-gray-100 space-y-1">
+    <div x-show="pkg.license" class="text-xs">
+        <span class="text-gray-500">License: </span>
+        <span class="text-gray-700" x-text="pkg.license"></span>
+    </div>
+    <div x-show="type !== 'apt' && pkg.description" class="text-xs text-gray-600" x-text="pkg.description"></div>
+</div>
+<div x-show="pkg.architecture" class="mt-1">
+    <span class="text-xs text-gray-500">Architecture: </span>
+    <span class="text-xs text-gray-700 font-mono" x-text="pkg.architecture"></span>
+</div>
+<!-- Extended metadata display -->
+<div x-show="(type === 'npm' || type === 'pypi' || type === 'go' || type === 'apk') && pkg.metadata" class="mt-2 pt-2 border-t border-gray-200 space-y-1">
+    <div x-show="pkg.metadata.description" class="text-xs text-gray-600" x-text="pkg.metadata.description"></div>
+    <!-- Go specific fields -->
+    <div x-show="type === 'go' && pkg.metadata.goVersion" class="text-xs">
+        <span class="text-gray-500">Go Version: </span>
+        <span class="text-gray-700" x-text="pkg.metadata.goVersion"></span>
+    </div>
+    <div x-show="type === 'go' && pkg.metadata.published" class="text-xs">
+        <span class="text-gray-500">Published: </span>
+        <span class="text-gray-700" x-text="pkg.metadata.published"></span>
+    </div>
+    <div x-show="type === 'go' && pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories) && pkg.metadata.directories.length > 0" class="text-xs">
+        <span class="text-gray-500">Directories: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.directories && Array.isArray(pkg.metadata.directories)) ? pkg.metadata.directories.join(', ') : ''"></span>
+    </div>
+    <!-- NPM/PyPI specific fields -->
+    <div x-show="(type === 'npm' || type === 'pypi') && pkg.metadata && pkg.metadata.author" class="text-xs">
+        <span class="text-gray-500">Author: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata && pkg.metadata.author) ? (typeof pkg.metadata.author === 'string' ? pkg.metadata.author : (pkg.metadata.author && pkg.metadata.author.name ? pkg.metadata.author.name : '')) : ''"></span>
+    </div>
+    <div x-show="(type === 'npm' || type === 'pypi') && pkg.metadata.homepage" class="text-xs">
+        <span class="text-gray-500">Homepage: </span>
+        <a :href="pkg.metadata.homepage" target="_blank" class="text-blue-600 hover:underline" x-text="pkg.metadata.homepage"></a>
+    </div>
+    <div x-show="(type === 'npm' || type === 'pypi') && pkg.metadata.repository" class="text-xs">
+        <span class="text-gray-500">Repository: </span>
+        <a :href="typeof pkg.metadata.repository === 'string' ? pkg.metadata.repository : (pkg.metadata.repository && pkg.metadata.repository.url ? pkg.metadata.repository.url : '')" target="_blank" class="text-blue-600 hover:underline" x-text="typeof pkg.metadata.repository === 'string' ? pkg.metadata.repository : (pkg.metadata.repository && pkg.metadata.repository.url ? pkg.metadata.repository.url : '')"></a>
+    </div>
+    <div x-show="(type === 'npm' || type === 'pypi') && pkg.metadata.keywords && Array.isArray(pkg.metadata.keywords) && pkg.metadata.keywords.length > 0" class="text-xs">
+        <span class="text-gray-500">Keywords: </span>
+        <span class="text-gray-700" x-text="(pkg.metadata.keywords && Array.isArray(pkg.metadata.keywords)) ? pkg.metadata.keywords.join(', ') : ''"></span>
+    </div>
+    <!-- APK specific fields -->
+    <div x-show="type === 'apk' && pkg.metadata.description" class="text-xs mt-1">
+        <span class="text-gray-600" x-text="pkg.metadata.description"></span>
+    </div>
+    <div x-show="type === 'apk' && pkg.metadata.architecture" class="text-xs">
+        <span class="text-gray-500">Architecture: </span>
+        <span class="text-gray-700 font-mono" x-text="pkg.metadata.architecture"></span>
+    </div>
+    <div x-show="type === 'apk' && pkg.metadata.size" class="text-xs">
+        <span class="text-gray-500">Size: </span>
+        <span class="text-gray-700" x-text="pkg.metadata.size"></span>
+    </div>
+    <div x-show="type === 'apk' && pkg.metadata.homepage" class="text-xs">
+        <span class="text-gray-500">Homepage: </span>
+        <a :href="pkg.metadata.homepage" target="_blank" class="text-blue-600 hover:underline" x-text="pkg.metadata.homepage"></a>
+    </div>
+</div>

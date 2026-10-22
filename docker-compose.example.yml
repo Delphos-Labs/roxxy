@@ -1,0 +1,96 @@
+# Example docker-compose.yml for roxxy
+# 
+# This is a production-ready configuration with sensible defaults.
+# Copy this file to docker-compose.yml and customize as needed.
+#
+# Quick start:
+#   1. Copy this file: cp docker-compose.example.yml docker-compose.yml
+#   2. Build the image: docker compose build
+#   3. Start roxxy: docker compose up -d
+#   4. View logs: docker compose logs -f roxxy
+#
+# To use roxxy as a proxy in other containers:
+#   Set environment variables:
+#     HTTP_PROXY=http://roxxy:3128
+#     HTTPS_PROXY=http://roxxy:3128
+#
+# To access the web UI:
+#   http://localhost:3128/ui
+#
+# To download the CA certificate (for MITM TLS):
+#   http://localhost:3128/api/v1/certs/ca
+
+version: '3.8'
+
+services:
+  roxxy:
+    image: roxxy:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    container_name: roxxy
+    ports:
+      - "3128:3128"   # HTTP/HTTPS proxy port (for HTTP_PROXY/HTTPS_PROXY)
+      - "443:443"     # HTTPS SNI routing port (for direct HTTPS connections)
+    volumes:
+      # Persistent cache - stores all cached artifacts (Docker images, packages, etc.)
+      # Use a named volume for portability, or bind mount for direct access:
+      # - ./cache:/app/cache
+      - roxxy-cache:/app/cache
+      
+      # Persistent certificates - CA cert and key for MITM TLS
+      # If empty, roxxy will generate certs on first startup
+      # To share certs with host (for installing CA cert), use bind mount:
+      - ./certs:/app/certs
+      # Or use named volume:
+      # - roxxy-certs:/app/certs
+      
+      # Optional: Mount a custom config.yaml
+      # Uncomment and adjust path if you want to use a custom config:
+      # - ./config.yaml:/app/config.yaml:ro
+      
+      # Optional: Bootstrap cache from tarball on first startup
+      # Place .tar or .tar.gz files in ./cache-bootstrap/ to automatically import them
+      # - ./cache-bootstrap:/docker-entrypoint-initcache.d:ro
+    environment:
+      # Don't set HTTP_PROXY/HTTPS_PROXY for roxxy itself
+      # Other containers should set these to use roxxy as a proxy
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - http_proxy=
+      - https_proxy=
+      
+      # Listen on all interfaces
+      - LISTEN_ADDR=:3128
+      
+      # Optional: Use custom config file (defaults to /app/config.yaml if it exists)
+      # - CONFIG_FILE=/app/config.yaml
+      
+      # Bypass proxy for these hosts (roxxy should connect directly)
+      - NO_PROXY=localhost,127.0.0.1,::1,host.docker.internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3128/api/v1/buildinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - roxxy-net
+
+volumes:
+  # Persistent cache volume - stores all cached artifacts
+  # This volume persists across container restarts and updates
+  roxxy-cache:
+    driver: local
+    
+  # Persistent certificates volume - stores CA cert and key
+  # Only needed if using named volume instead of bind mount
+  # roxxy-certs:
+  #   driver: local
+
+networks:
+  roxxy-net:
+    driver: bridge

@@ -1,0 +1,20 @@
+{{/* Flat Group Template */}}
+{{define "flat-group"}}
+<button 
+    @click.prevent="toggleGroup('{{.type}}', groupName)"
+    type="button"
+    class="w-full flex items-center justify-between px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors text-left mb-1">
+    <div class="flex items-center space-x-2">
+        <i :class="expandedGroups[`{{.type}}:${groupName}`] === true ? 'ti ti-chevron-down' : 'ti ti-chevron-right'" class="icon text-blue-600 text-xs"></i>
+        <span class="text-xs font-medium text-blue-700" x-text="groupName"></span>
+        <span class="text-xs text-blue-600" x-text="`(${(groupData && groupData.count) || 0} packages)`"></span>
+    </div>
+</button>
+<div x-show="expandedGroups[`{{.type}}:${groupName}`] === true" x-cloak class="ml-2">
+    <template x-for="[pkgName, pkgGroup] in Object.entries((groupData && groupData.packages) || {})" :key="pkgName">
+        <div x-show="packageMatchesSearch(pkgName, '') || (pkgGroup.versions && pkgGroup.versions.some(p => packageMatchesSearch(pkgName, p.version)))">
+            {{template "package-component" (dict "type" .type "isFlat" true)}}
+        </div>
+    </template>
+</div>
+{{end}}
