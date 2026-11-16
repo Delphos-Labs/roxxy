@@ -681,18 +681,35 @@ roar push <registry> <repo:tag> --from-tarball cache.tar --platform linux/amd64
 roar push <registry> --from-tarball cache.tar --all
 roar push <registry> --from-tarball cache.tar --all --platform linux/amd64
 
+# Replace tags that already point at different content (e.g. a chart
+# re-released at the same version). Without --overwrite they are skipped.
+roar push <registry> --from-tarball cache.tar --all --overwrite
+
 # Build and push a helm OCI manifest from a locally-packaged chart.
 # <repo:tag> defaults to the chart's name:version from Chart.yaml.
 roar push <registry> --chart mychart-0.1.0.tgz
 roar push <registry> charts/mychart:0.1.0 --chart mychart-0.1.0.tgz
 ```
 
-**`push --all` exit codes** (for CI gating on `$?`): **0** = every ref landed
-(this includes benign tag conflicts — the destination already has that tag
-pointing at different content, which leaves the existing content intact); **2**
-= one or more refs FAILED to push or a manifest path was unparseable, so the
-destination registry is **INCOMPLETE** — treat non-zero as a failed/partial
-delivery and do not deploy.
+**Tag conflicts:** a tag that already holds identical (or content-equivalent)
+content is skipped. A tag that points at *different* content is a conflict:
+by default roar refuses to replace it, leaves the existing content in place,
+and lists it in the summary. Pass `--overwrite` to replace it. Each replaced
+tag is logged as `<repo>:<tag> overwritten: was <old>, now <new>` and counted
+in the summary. If the registry itself refuses the replacement (for example an
+ECR repository with `IMMUTABLE` tags), roar reports the registry's error for
+that tag as a failure. `--overwrite` applies to `--from-tarball` pushes only:
+`--chart` always replaces the tag, so `--chart --overwrite` is rejected.
+
+**`push --all` exit codes** (for CI gating on `$?`):
+- **0**: Every ref landed or already held matching content.
+- **2**: A tag conflicted, a push failed, or a manifest path was unparseable.
+  Registry rejection of `--overwrite` is a failure. Do not deploy an incomplete destination.
+
+The single-ref form exits 1 on a conflict or failure.
+
+Refused tag conflicts now exit 2 instead of 0. This lets automated delivery
+checks reject a destination that still holds an older release.
 
 Authentication uses the docker config file (`~/.docker/config.json`):
 credential helpers are tried first, then the `auths` block, then anonymous.

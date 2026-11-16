@@ -95,9 +95,9 @@ jq -r '.components[] | "\(.name)\t\(.version)"'     delivery.cdx.json
 # 3. INTEGRITY — digests self-verify as the bundle loads into your registry.
 roar push <your-registry> --from-tarball delphos-airgap-<ts>.tar --all
 #   roar verifies every blob against its digest while streaming; a mismatch aborts.
-#   Exit 0 = the whole bundle landed (benign tag conflicts included); exit 2 =
-#   a ref failed or a manifest was unparseable — the registry is INCOMPLETE, do
-#   not deploy. Gate your pipeline on this exit code.
+#   Exit 0 = the whole bundle landed or already held matching content.
+#   Exit 2 = a tag conflicted, a ref failed or a manifest was unparseable. The
+#   registry is INCOMPLETE, do not deploy. Gate your pipeline on this exit code.
 ```
 
 A passing `cosign verify-blob` on **both** archives, plus a clean `roar push`,

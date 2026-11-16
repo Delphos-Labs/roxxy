@@ -251,7 +251,7 @@ func HandleDocker(cfg Config, args []string) {
 					fmt.Printf(" (platforms: %s)", strings.Join(spec.Platforms, ", "))
 				}
 				fmt.Println()
-				pushFromTarball(cfg, registry, spec.Image, tarballPath, "", DefaultPushWorkers, false)
+				pushFromTarball(cfg, registry, spec.Image, tarballPath, "", DefaultPushWorkers, pushOptions{})
 			}
 			fmt.Printf("\nCompleted pushing %d images\n", len(specs))
 		} else {
@@ -265,7 +265,7 @@ func HandleDocker(cfg Config, args []string) {
 				fmt.Println("Example: docker push docker.io --file images.txt")
 				os.Exit(1)
 			}
-			pushFromTarball(cfg, registry, imageSpec, tarballPath, "", DefaultPushWorkers, false)
+			pushFromTarball(cfg, registry, imageSpec, tarballPath, "", DefaultPushWorkers, pushOptions{})
 		}
 	case "export":
 		// docker export <image> [output.tar] [--from-tarball <tarball>] [--file <file>]

@@ -35,7 +35,7 @@ var DefaultPushWorkers = runtime.NumCPU() + 1
 // Authentication uses the docker config (credential helpers, then auths
 // block, then anonymous), so `docker login` /
 // `aws ecr get-login-password | docker login` "just works".
-func pushFromTarball(_ Config, registry, ref, tarballPath, platform string, workers int, coerceDocker bool) {
+func pushFromTarball(_ Config, registry, ref, tarballPath, platform string, workers int, opts pushOptions) {
 	repoName, tag, err := parseImageSpec(ref)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -87,7 +87,7 @@ func pushFromTarball(_ Config, registry, ref, tarballPath, platform string, work
 	}
 	progress := newProgressReporter(len(uniqueBlobs))
 	progress.start()
-	coord := newPushCoordinator(rc, reader, workers, progress, sizes, coerceDocker)
+	coord := newPushCoordinator(rc, reader, workers, progress, sizes, opts)
 	outcome, err := coord.Run([]*pushRef{r})
 	progress.stop()
 	if err != nil {
@@ -103,9 +103,13 @@ func pushFromTarball(_ Config, registry, ref, tarballPath, platform string, work
 	if len(outcome.conflicts) > 0 {
 		// Single-ref push: a conflict on the named tag is the user's
 		// surprise; surface it as an error rather than a silent skip.
-		fmt.Printf("Error: %s:%s already points at %s in registry; refusing to overwrite\n",
+		fmt.Printf("Error: %s:%s already points at %s in registry; refusing to replace it (use --overwrite)\n",
 			outcome.conflicts[0].repoName, outcome.conflicts[0].tag, outcome.conflicts[0].conflictDgst)
 		os.Exit(1)
+	}
+	if len(outcome.overwrites) > 0 {
+		fmt.Printf("Successfully pushed %s:%s to %s (overwrote %s)\n", repoName, tag, registry, outcome.overwrites[0].conflictDgst)
+		return
 	}
 	fmt.Printf("Successfully pushed %s:%s to %s\n", repoName, tag, registry)
 }
@@ -133,6 +137,11 @@ func manifestsEquivalent(rc *registryClient, repoName, tag string, ourData []byt
 		return false, err
 	}
 	if ours.MediaType != theirs.MediaType {
+		return false, nil
+	}
+	// Indexes have no config or layers. Compare them by digest, not by the
+	// empty descriptor sets that would make every index look equivalent.
+	if ours.Config == "||0" || theirs.Config == "||0" {
 		return false, nil
 	}
 	if ours.Config != theirs.Config {

@@ -25,7 +25,7 @@ import (
 // cross-repo-mounted to other refs) out of the total distinct-blob count, so
 // the headline reflects real upload work rather than the dedup-inflated
 // (repo×digest) slot count. Bytes and rate track actual wire transfer.
-func pushAllFromTarball(_ Config, registry, tarballPath, platform string, workers int, coerceDocker bool) {
+func pushAllFromTarball(_ Config, registry, tarballPath, platform string, workers int, opts pushOptions) {
 	reader, err := cli.OpenTarball(tarballPath)
 	if err != nil {
 		fmt.Printf("Error opening tarball: %v\n", err)
@@ -77,7 +77,7 @@ func pushAllFromTarball(_ Config, registry, tarballPath, platform string, worker
 	progress := newProgressReporter(len(uniqueBlobs))
 	progress.start()
 
-	coord := newPushCoordinator(rc, reader, workers, progress, sizes, coerceDocker)
+	coord := newPushCoordinator(rc, reader, workers, progress, sizes, opts)
 	outcome, err := coord.Run(refs)
 	progress.stop()
 	if err != nil {
@@ -87,6 +87,12 @@ func pushAllFromTarball(_ Config, registry, tarballPath, platform string, worker
 
 	pushed := len(refs) - len(outcome.conflicts) - len(outcome.failures)
 	fmt.Printf("\nSuccessfully pushed %d ref(s) to %s\n", pushed, registry)
+	if len(outcome.overwrites) > 0 {
+		fmt.Printf("\n%d ref(s) overwritten (tag previously pointed at different content):\n", len(outcome.overwrites))
+		for _, o := range outcome.overwrites {
+			fmt.Printf("  %s:%s (was %s, now %s)\n", o.repoName, o.tag, o.conflictDgst, o.manifestDigest)
+		}
+	}
 	// Per-manifest read errors are usually benign — roxxy's cache
 	// indexes bare-name aliases (argo-cd:8.1.3, busybox:1.28) for
 	// bookkeeping while the real OCI manifest lives at the namespaced
@@ -100,17 +106,17 @@ func pushAllFromTarball(_ Config, registry, tarballPath, platform string, worker
 	if len(outcome.conflicts) > 0 {
 		fmt.Printf("\n%d ref(s) skipped due to tag conflicts:\n", len(outcome.conflicts))
 		for _, c := range outcome.conflicts {
-			fmt.Printf("  %s:%s (registry has %s)\n", c.repoName, c.tag, c.conflictDgst)
+			fmt.Printf("  %s:%s (registry has %s, bundle has %s)\n", c.repoName, c.tag, c.conflictDgst, c.manifestDigest)
 		}
-		fmt.Println("\nThe destination registry has tag immutability enabled and these")
-		fmt.Println("tags already point at different content. To overwrite, delete the")
-		fmt.Println("existing tags first or push under a different tag.")
+		fmt.Println("\nThese tags already point at different content in the destination")
+		fmt.Println("registry, and roar refused to replace them. Re-run with --overwrite")
+		fmt.Println("to replace them with the bundle's content. The push is incomplete.")
 	}
 
-	// Genuine push failures (manifest push errored, coercion refused) mean the
+	// Genuine push failures (manifest push errored or an overwrite was
+	// rejected by the registry, coercion refused) mean the
 	// destination is missing content the bundle claims to ship. Report them
-	// loudly and exit non-zero — distinct from the benign tag-conflict case
-	// above, which leaves the existing (correct) content intact.
+	// loudly and exit non-zero, just as for refused tag conflicts.
 	if len(outcome.failures) > 0 {
 		fmt.Printf("\n%d ref(s) FAILED to push — destination registry is INCOMPLETE:\n", len(outcome.failures))
 		for _, f := range outcome.failures {
@@ -142,12 +148,13 @@ func pushAllFromTarball(_ Config, registry, tarballPath, platform string, worker
 
 // pushAllExitCode maps a `push --all` result to a process exit code: 2 if any
 // ref FAILED to push or any manifest path was unparseable (the destination
-// registry is INCOMPLETE — do not deploy), else 0. Benign tag conflicts alone
-// are NOT fatal (existing content is intact), so a conflicts-only run exits 0.
+// registry is INCOMPLETE, so do not deploy), else 0. Refused tag conflicts also
+// exit 2 because the destination still serves different content.
+// A registry rejecting an --overwrite is a failure, not a conflict.
 // Extracted from pushAllFromTarball so the contract is unit-testable without
 // intercepting os.Exit.
 func pushAllExitCode(outcome pushOutcome, skippedUnparseable []string) int {
-	if len(outcome.failures) > 0 || len(skippedUnparseable) > 0 {
+	if len(outcome.failures) > 0 || len(outcome.conflicts) > 0 || len(skippedUnparseable) > 0 {
 		return 2
 	}
 	return 0

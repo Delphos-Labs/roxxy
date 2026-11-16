@@ -58,7 +58,7 @@ func TestParseManifestPath(t *testing.T) {
 
 // TestPushAllExitCode pins the `roar push --all` exit-code contract: 2 if any ref
 // failed to push or any manifest path was unparseable (registry INCOMPLETE), else
-// 0 — benign tag conflicts alone are NOT fatal.
+// 0. Refused tag conflicts leave the destination incomplete.
 func TestPushAllExitCode(t *testing.T) {
 	ref := &pushRef{repoName: "library/x", tag: "1"}
 	tests := []struct {
@@ -68,7 +68,7 @@ func TestPushAllExitCode(t *testing.T) {
 		want        int
 	}{
 		{"clean", pushOutcome{}, nil, 0},
-		{"conflicts only (benign)", pushOutcome{conflicts: []*pushRef{ref}}, nil, 0},
+		{"refused conflict", pushOutcome{conflicts: []*pushRef{ref}}, nil, 2},
 		{"genuine failure", pushOutcome{failures: []*pushRef{ref}}, nil, 2},
 		{"unparseable", pushOutcome{}, []string{"helm-charts/x"}, 2},
 		{"failure + conflict", pushOutcome{conflicts: []*pushRef{ref}, failures: []*pushRef{ref}}, nil, 2},

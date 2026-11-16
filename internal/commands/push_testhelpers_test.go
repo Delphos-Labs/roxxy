@@ -263,7 +263,18 @@ type fakeRegistry struct {
 	// failManifestRepo, when set, makes the manifest PUT for that repo return
 	// 500 — exercises the failures (vs conflicts) partition in pushOutcome.
 	failManifestRepo string
-	nextUpload       int
+	// manifests holds stored manifest bytes per "<repo>:<tag>"; HEAD/GET serve
+	// them with a Docker-Content-Digest computed from the bytes.
+	manifests map[string][]byte
+	// immutableTags makes a manifest PUT that would move an existing tag to a
+	// different digest fail the way an IMMUTABLE ECR repository does.
+	immutableTags bool
+	// brokenGETStatus, when non-zero, makes every manifest GET answer with
+	// this status and brokenGETBody while HEAD still reports the stored
+	// digest: the registry says the tag exists but its content can't be read.
+	brokenGETStatus int
+	brokenGETBody   string
+	nextUpload      int
 }
 
 func newFakeRegistry(t *testing.T) *fakeRegistry {
@@ -274,6 +285,7 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 		globalBlob:     make(map[string]bool),
 		manifestPUTs:   make(map[string]int),
 		uploads:        make(map[string]*bytes.Buffer),
+		manifests:      make(map[string][]byte),
 	}
 	fr.server = httptest.NewServer(http.HandlerFunc(fr.handle))
 	t.Cleanup(fr.server.Close)
@@ -290,7 +302,7 @@ func (fr *fakeRegistry) failUpload(digest string) {
 }
 
 // failManifest forces the manifest PUT for repo to return 500 — drives the
-// failures partition in pushOutcome (distinct from a benign tag conflict).
+// failures partition in pushOutcome (distinct from a refused tag conflict).
 func (fr *fakeRegistry) failManifest(repo string) {
 	fr.mu.Lock()
 	fr.failManifestRepo = repo
@@ -309,6 +321,40 @@ func (fr *fakeRegistry) totalUploads(digest string) int {
 		}
 	}
 	return total
+}
+
+// seedManifest stores data under repo:tag as if an earlier push had landed it.
+func (fr *fakeRegistry) seedManifest(repo, tag string, data []byte) {
+	fr.mu.Lock()
+	fr.manifests[repo+":"+tag] = data
+	fr.mu.Unlock()
+}
+
+// rejectTagOverwrites makes the registry refuse to move an existing tag.
+func (fr *fakeRegistry) rejectTagOverwrites() {
+	fr.mu.Lock()
+	fr.immutableTags = true
+	fr.mu.Unlock()
+}
+
+// breakManifestGETs makes every manifest GET return status with body, leaving
+// HEAD intact.
+func (fr *fakeRegistry) breakManifestGETs(status int, body string) {
+	fr.mu.Lock()
+	fr.brokenGETStatus, fr.brokenGETBody = status, body
+	fr.mu.Unlock()
+}
+
+// servedDigest returns the sha256 of the manifest bytes a GET of repo:tag
+// would return, or "" if the tag is absent.
+func (fr *fakeRegistry) servedDigest(repo, tag string) string {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	data, ok := fr.manifests[repo+":"+tag]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(data))
 }
 
 func (fr *fakeRegistry) manifestPushCount(repo string) int {
@@ -440,17 +486,47 @@ func (fr *fakeRegistry) handleUpload(w http.ResponseWriter, r *http.Request) {
 // handleManifest covers HEAD/GET (existence/fetch) and PUT (store).
 func (fr *fakeRegistry) handleManifest(w http.ResponseWriter, r *http.Request) {
 	repo := repoFromPath(r.URL.Path, "manifests")
+	tag := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+	key := repo + ":" + tag
 	switch r.Method {
 	case http.MethodHead, http.MethodGet:
-		// Fresh registry: nothing stored yet, so precheck sees no conflict.
-		w.WriteHeader(http.StatusNotFound)
+		fr.mu.Lock()
+		data, ok := fr.manifests[key]
+		brokenStatus, brokenBody := fr.brokenGETStatus, fr.brokenGETBody
+		fr.mu.Unlock()
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodGet && brokenStatus != 0 {
+			w.WriteHeader(brokenStatus)
+			_, _ = w.Write([]byte(brokenBody))
+			return
+		}
+		w.Header().Set("Docker-Content-Digest", fmt.Sprintf("sha256:%x", sha256.Sum256(data)))
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(data)
+		}
 	case http.MethodPut:
+		body, _ := io.ReadAll(r.Body)
 		fr.mu.Lock()
 		fr.manifestPUTs[repo]++
 		shouldFail := fr.failManifestRepo != "" && fr.failManifestRepo == repo
+		existing, exists := fr.manifests[key]
+		immutableReject := fr.immutableTags && exists && !bytes.Equal(existing, body)
+		if !shouldFail && !immutableReject {
+			fr.manifests[key] = body
+		}
 		fr.mu.Unlock()
 		if shouldFail {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if immutableReject {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, `{"errors":[{"code":"TAG_INVALID","message":"The image tag '%s' already exists in the '%s' repository and cannot be overwritten because the repository is immutable."}]}`, tag, repo)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
