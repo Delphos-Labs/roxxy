@@ -16,7 +16,7 @@ import (
 // coordinator against the fake registry. progress is nil throughout: every
 // reporter method is nil-safe, so this avoids spawning the render goroutine and
 // keeps the test output clean while still exercising the real push paths.
-func buildCoordinator(t *testing.T, fr *fakeRegistry, tarballPath string, workers int) (*pushCoordinator, []*pushRef) {
+func buildCoordinator(t *testing.T, fr *fakeRegistry, tarballPath string, workers int, opts pushOptions) (*pushCoordinator, []*pushRef) {
 	t.Helper()
 	reader := openSynthTarball(t, tarballPath)
 
@@ -36,7 +36,7 @@ func buildCoordinator(t *testing.T, fr *fakeRegistry, tarballPath string, worker
 	if err != nil {
 		t.Fatalf("newRegistryClient: %v", err)
 	}
-	coord := newPushCoordinator(rc, reader, workers, nil, sizes, false)
+	coord := newPushCoordinator(rc, reader, workers, nil, sizes, opts)
 	return coord, refs
 }
 
@@ -56,7 +56,7 @@ func TestPushCoordinator_Run(t *testing.T) {
 	tarballPath := writeSyntheticTarball(t, images, nil)
 	fr := newFakeRegistry(t)
 
-	coord, refs := buildCoordinator(t, fr, tarballPath, 4)
+	coord, refs := buildCoordinator(t, fr, tarballPath, 4, pushOptions{})
 	if len(refs) != 2 {
 		t.Fatalf("expected 2 refs, got %d", len(refs))
 	}
@@ -99,7 +99,7 @@ func TestPushCoordinator_Run_ErrorSurfaces(t *testing.T) {
 	// Force the shared blob's commit PUT to 500 on every attempt.
 	fr.failUpload(sharedDigest)
 
-	coord, refs := buildCoordinator(t, fr, tarballPath, 4)
+	coord, refs := buildCoordinator(t, fr, tarballPath, 4, pushOptions{})
 
 	// If the worker pool fails to shut down on the upload error, Run never
 	// returns. runWithDeadline bounds that so a deadlock fails THIS test in 30s
@@ -380,11 +380,6 @@ func runWithDeadline(t *testing.T, coord *pushCoordinator, refs []*pushRef) (pus
 	}
 }
 
-// TestPushCoordinator_Run_ManifestFailurePartition: a manifest-push 500 must land
-// in outcome.failures (exit 2), NOT outcome.conflicts (exit 0) — the partition
-// commit 8d5d5a5 added. The fake's manifest handler returns 201 by default, so
-// without failManifest this path was untestable; a refactor mis-routing a
-// manifest failure into conflicts would otherwise ship an incomplete registry.
 func TestPushCoordinator_Run_ManifestFailurePartition(t *testing.T) {
 	images, _ := twoImagesSharingABlob()
 	images = images[:1] // single image: library/alpha:1.0
@@ -392,11 +387,11 @@ func TestPushCoordinator_Run_ManifestFailurePartition(t *testing.T) {
 	fr := newFakeRegistry(t)
 	fr.failManifest("library/alpha") // blobs upload fine; the manifest PUT 500s
 
-	coord, refs := buildCoordinator(t, fr, tarballPath, 2)
+	coord, refs := buildCoordinator(t, fr, tarballPath, 2, pushOptions{})
 	outcome, _ := runWithDeadline(t, coord, refs)
 
 	if len(outcome.conflicts) != 0 {
-		t.Errorf("manifest 500 mis-routed into conflicts (would exit 0): %+v", outcome.conflicts)
+		t.Errorf("manifest 500 mis-routed into conflicts: %+v", outcome.conflicts)
 	}
 	if len(outcome.failures) != 1 {
 		t.Fatalf("manifest 500 not recorded in outcome.failures: got %d", len(outcome.failures))

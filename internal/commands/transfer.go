@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -60,112 +61,125 @@ func HandleImport(cfg Config, args []string) {
 // tarball already holds the right manifest, and the local-chart path always
 // produces a helm-mediatype manifest.
 func HandlePush(cfg Config, args []string) {
-	if len(args) < 2 {
-		printPushUsage()
+	req, err := parsePushArgs(args)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		if errors.Is(err, errPushUsage) {
+			printPushUsage()
+		}
 		os.Exit(1)
 	}
+	switch {
+	case req.pushAll:
+		pushAllFromTarball(cfg, req.registry, req.tarballPath, req.platform, req.workers, req.opts)
+	case req.tarballPath != "":
+		pushFromTarball(cfg, req.registry, req.ref, req.tarballPath, req.platform, req.workers, req.opts)
+	default:
+		PushHelmChart(cfg, req.registry, req.chartPath, req.ref)
+	}
+}
 
-	registry := args[0]
+// pushRequest is a validated `push` command line.
+type pushRequest struct {
+	registry    string
+	ref         string
+	tarballPath string
+	chartPath   string
+	platform    string
+	workers     int
+	pushAll     bool
+	opts        pushOptions
+}
+
+var errPushUsage = errors.New("must specify --from-tarball or --chart (with --all to push every ref)")
+
+// parsePushArgs parses `push <registry> [<repo:tag>] <flags>` and rejects
+// flag combinations that have no meaning. An error wrapping errPushUsage
+// means the caller should also print the usage text.
+func parsePushArgs(args []string) (pushRequest, error) {
+	if len(args) < 2 {
+		return pushRequest{}, errPushUsage
+	}
+	req := pushRequest{registry: args[0], workers: DefaultPushWorkers}
 	rest := args[1:]
 
 	// Optional positional <repo:tag>. Anything that doesn't start with "--" is
 	// treated as the ref. Required for --from-tarball without --all; optional
 	// for --chart (defaults to chart name:version) and forbidden with --all.
-	var ref string
-	var tarballPath, chartPath, platform string
-	var pushAll bool
-	var coerceDocker bool
-	workers := DefaultPushWorkers
-
 	i := 0
 	if len(rest) > 0 && !strings.HasPrefix(rest[0], "--") {
-		ref = rest[0]
+		req.ref = rest[0]
 		i = 1
 	}
 	for ; i < len(rest); i++ {
 		switch rest[i] {
 		case "--from-tarball":
 			if i+1 >= len(rest) {
-				fmt.Println("Error: --from-tarball requires a path")
-				os.Exit(1)
+				return pushRequest{}, errors.New("--from-tarball requires a path")
 			}
-			tarballPath = rest[i+1]
+			req.tarballPath = rest[i+1]
 			i++
 		case "--chart":
 			if i+1 >= len(rest) {
-				fmt.Println("Error: --chart requires a path")
-				os.Exit(1)
+				return pushRequest{}, errors.New("--chart requires a path")
 			}
-			chartPath = rest[i+1]
+			req.chartPath = rest[i+1]
 			i++
 		case "--platform":
 			if i+1 >= len(rest) {
-				fmt.Println("Error: --platform requires a value (e.g. linux/amd64)")
-				os.Exit(1)
+				return pushRequest{}, errors.New("--platform requires a value (e.g. linux/amd64)")
 			}
-			platform = rest[i+1]
+			req.platform = rest[i+1]
 			i++
 		case "--workers":
 			if i+1 >= len(rest) {
-				fmt.Println("Error: --workers requires a value")
-				os.Exit(1)
+				return pushRequest{}, errors.New("--workers requires a value")
 			}
 			n, err := strconv.Atoi(rest[i+1])
 			if err != nil || n < 1 {
-				fmt.Printf("Error: --workers must be a positive integer (got %q)\n", rest[i+1])
-				os.Exit(1)
+				return pushRequest{}, fmt.Errorf("--workers must be a positive integer (got %q)", rest[i+1])
 			}
-			workers = n
+			req.workers = n
 			i++
 		case "--all":
-			pushAll = true
+			req.pushAll = true
 		case "--coerce-docker-manifest":
-			coerceDocker = true
+			req.opts.coerceDocker = true
+		case "--overwrite":
+			req.opts.overwrite = true
 		default:
-			fmt.Printf("Error: unknown flag: %s\n", rest[i])
-			os.Exit(1)
+			return pushRequest{}, fmt.Errorf("unknown flag: %s", rest[i])
 		}
 	}
 
 	switch {
-	case tarballPath != "" && chartPath != "":
-		fmt.Println("Error: --from-tarball and --chart are mutually exclusive")
-		os.Exit(1)
-	case pushAll:
-		if tarballPath == "" {
-			fmt.Println("Error: --all requires --from-tarball")
-			os.Exit(1)
+	case req.tarballPath != "" && req.chartPath != "":
+		return pushRequest{}, errors.New("--from-tarball and --chart are mutually exclusive")
+	case req.pushAll:
+		if req.tarballPath == "" {
+			return pushRequest{}, errors.New("--all requires --from-tarball")
 		}
-		if ref != "" {
-			fmt.Println("Error: --all pushes every ref in the tarball; do not pass <repo:tag>")
-			os.Exit(1)
+		if req.ref != "" {
+			return pushRequest{}, errors.New("--all pushes every ref in the tarball; do not pass <repo:tag>")
 		}
-		if chartPath != "" {
-			fmt.Println("Error: --all and --chart are mutually exclusive")
-			os.Exit(1)
+	case req.tarballPath != "":
+		if req.ref == "" {
+			return pushRequest{}, errors.New("<repo:tag> is required when pushing from a tarball (or pass --all)")
 		}
-		pushAllFromTarball(cfg, registry, tarballPath, platform, workers, coerceDocker)
-	case tarballPath != "":
-		if ref == "" {
-			fmt.Println("Error: <repo:tag> is required when pushing from a tarball (or pass --all)")
-			os.Exit(1)
+	case req.chartPath != "":
+		if req.platform != "" {
+			return pushRequest{}, errors.New("--platform has no meaning for chart pushes")
 		}
-		pushFromTarball(cfg, registry, ref, tarballPath, platform, workers, coerceDocker)
-	case chartPath != "":
-		if platform != "" {
-			fmt.Println("Error: --platform has no meaning for chart pushes")
-			os.Exit(1)
+		if req.opts.coerceDocker {
+			return pushRequest{}, errors.New("--coerce-docker-manifest is incompatible with --chart; helm charts must be pushed as OCI artifacts")
 		}
-		if coerceDocker {
-			fmt.Println("Error: --coerce-docker-manifest is incompatible with --chart; helm charts must be pushed as OCI artifacts")
-			os.Exit(1)
+		if req.opts.overwrite {
+			return pushRequest{}, errors.New("--overwrite applies only to --from-tarball pushes; --chart always replaces the tag")
 		}
-		PushHelmChart(cfg, registry, chartPath, ref)
 	default:
-		fmt.Println("Error: must specify --from-tarball or --chart (with --all to push every ref)")
-		printPushUsage()
-		os.Exit(1)
+		return pushRequest{}, errPushUsage
 	}
+	return req, nil
 }
 
 func printPushUsage() {
@@ -184,6 +198,12 @@ func printPushUsage() {
 	fmt.Println("       Force docker manifest v2 mediatype on push (for registries")
 	fmt.Println("       that reject OCI image manifests). Refuses to coerce helm")
 	fmt.Println("       charts — chart-as-docker is unusable.")
+	fmt.Println("  --overwrite")
+	fmt.Println("       Replace a tag that already points at different content.")
+	fmt.Println("       Without it, such tags are left untouched and reported as")
+	fmt.Println("       conflicts (--all exits 2; the single-ref form exits 1).")
+	fmt.Println("       If the registry refuses the replacement (e.g. an immutable")
+	fmt.Println("       ECR repository), its error is reported and roar exits non-zero.")
 	fmt.Println()
 	fmt.Println("  push <registry> [<repo:tag>] --chart <chart.tgz>")
 	fmt.Println("       Package and push a local helm chart to an OCI registry.")
@@ -192,6 +212,7 @@ func printPushUsage() {
 	fmt.Println("Examples:")
 	fmt.Println("  push 123.dkr.ecr.us-east-1.amazonaws.com my-team/api:v1 --from-tarball cache.tar")
 	fmt.Println("  push 123.dkr.ecr.us-east-1.amazonaws.com --from-tarball cache.tar --all --platform linux/amd64")
+	fmt.Println("  push 123.dkr.ecr.us-east-1.amazonaws.com --from-tarball cache.tar --all --overwrite")
 	fmt.Println("  push 123.dkr.ecr.us-east-1.amazonaws.com --chart mychart-0.1.0.tgz")
 }
 

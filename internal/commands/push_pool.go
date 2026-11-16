@@ -31,15 +31,18 @@ type pushRef struct {
 
 	// Filled by coordinator; not for caller use.
 	outstanding  atomic.Int32 // blobs left to land before the manifest goes up
-	skipManifest atomic.Bool  // tag already at content-equivalent manifest, or conflict
-	tagConflict  atomic.Bool  // tag points at different content, mount-incompatible
-	conflictDgst string       // existing digest in registry, for the conflict report
+	skipManifest atomic.Bool  // tag already at content-equivalent manifest, refused conflict, or failed precheck
+	tagConflict  atomic.Bool  // tag points at different content and overwrite is off
+	replacing    atomic.Bool  // tag points at different content and overwrite is on
+	overwritten  atomic.Bool  // replacing, and the manifest PUT succeeded
+	conflictDgst string       // existing digest in registry, for the conflict/overwrite report
 
 	// pushFailed marks a *genuine* manifest-push failure (network/auth error,
-	// or a refused coercion) as distinct from a benign tag-immutability
-	// conflict. A conflict is the registry correctly rejecting an overwrite of
-	// existing content; a failure means the ref did NOT land and the push must
-	// exit non-zero. Kept separate from tagConflict so the run summary reports
+	// the registry rejecting an overwrite, an overwrite whose comparison with
+	// the existing manifest failed, or a refused coercion) as distinct
+	// from a refused conflict. A refused conflict leaves the existing content
+	// intact; a failure means the ref did NOT land and the push must exit
+	// non-zero. Kept separate from tagConflict so the run summary reports
 	// each under the right heading with the right exit code.
 	pushFailed atomic.Bool
 	failReason string // human-readable cause for the failure report
@@ -237,38 +240,53 @@ type pushCoordinator struct {
 	// artifact). Off by default; opt-in for callers that need to push to
 	// docker-only registries that reject OCI image manifests.
 	coerceDocker bool
+
+	// overwrite pushes refs whose tag already points at different content,
+	// replacing the tag. Off by default: such refs are refused and skipped.
+	overwrite bool
 }
 
-func newPushCoordinator(rc *registryClient, reader *cli.TarballReader, workers int, progress *progressReporter, sizes map[string]int64, coerceDocker bool) *pushCoordinator {
+// pushOptions are the caller-selected behaviours of a push-from-tarball run.
+type pushOptions struct {
+	coerceDocker bool
+	overwrite    bool
+}
+
+func newPushCoordinator(rc *registryClient, reader *cli.TarballReader, workers int, progress *progressReporter, sizes map[string]int64, opts pushOptions) *pushCoordinator {
 	if workers < 1 {
 		workers = 1
 	}
 	return &pushCoordinator{
 		rc: rc, reader: reader, workers: workers,
 		progress: progress, sizes: sizes,
-		coerceDocker: coerceDocker,
+		coerceDocker: opts.coerceDocker,
+		overwrite:    opts.overwrite,
 	}
 }
 
-// pushOutcome partitions the refs the coordinator processed into the two
+// pushOutcome partitions the refs the coordinator processed into the
 // categories callers must report differently:
 //
 //   - conflicts: the destination tag already points at different content and
-//     the registry has immutability on. Benign — the caller reports it and
-//     exits 0 in --all mode (the existing content is intact).
-//   - failures: the ref genuinely did NOT land (manifest push errored, or a
-//     coercion was refused). The caller MUST exit non-zero — the destination
-//     is missing content the push claimed to deliver.
+//     overwrite is off, so roar refused to replace it. The caller reports it
+//     and exits non-zero because the requested content did not land.
+//   - overwrites: the destination tag pointed at different content and was
+//     replaced (overwrite on, manifest PUT accepted).
+//   - failures: the ref genuinely did NOT land (manifest push errored, the
+//     registry rejected an overwrite, or a coercion was refused). The caller
+//     MUST exit non-zero because the destination is missing content the push
+//     claimed to deliver.
 type pushOutcome struct {
-	conflicts []*pushRef
-	failures  []*pushRef
+	conflicts  []*pushRef
+	overwrites []*pushRef
+	failures   []*pushRef
 }
 
 // Run is the main entry point. Phase 1 parallelizes the manifest pre-check;
 // phase 2 builds the blob job list (skipping refs that don't need any work);
 // phase 3 drains the job queue. Returns the partitioned outcome (tag conflicts
-// vs genuine push failures); both are non-fatal to the pool but only conflicts
-// are non-fatal to the overall exit code.
+// vs genuine push failures). Both allow other refs to proceed, but make the
+// overall exit code non-zero.
 func (c *pushCoordinator) Run(refs []*pushRef) (pushOutcome, error) {
 	if err := c.precheckManifests(refs); err != nil {
 		return pushOutcome{}, err
@@ -290,6 +308,8 @@ func (c *pushCoordinator) Run(refs []*pushRef) (pushOutcome, error) {
 			out.failures = append(out.failures, r)
 		case r.tagConflict.Load():
 			out.conflicts = append(out.conflicts, r)
+		case r.overwritten.Load():
+			out.overwrites = append(out.overwrites, r)
 		}
 	}
 	return out, nil
@@ -361,10 +381,31 @@ func (c *pushCoordinator) precheckOne(r *pushRef) error {
 		r.skipManifest.Store(true)
 		return nil
 	}
-	c.progress.Logf("  %s:%s conflict: registry has %s, computed %s\n",
+	r.conflictDgst = existing
+	if cmpErr != nil {
+		// The tag points at another digest, but its manifest could not be
+		// fetched or parsed, so whether the content differs is unknown.
+		// Replacing on a guess would report an overwrite nobody verified.
+		if c.overwrite {
+			c.progress.Logf("  %s:%s registry has %s; comparing it failed: %v; not overwriting\n",
+				r.repoName, r.tag, existing[:19], cmpErr)
+			r.failReason = fmt.Sprintf("compare with existing %s failed: %v", existing, cmpErr)
+			r.pushFailed.Store(true)
+			r.skipManifest.Store(true)
+			return nil
+		}
+		c.progress.Logf("  %s:%s comparing with registry's %s failed: %v\n",
+			r.repoName, r.tag, existing[:19], cmpErr)
+	}
+	if c.overwrite {
+		c.progress.Logf("  %s:%s differs: registry has %s, computed %s; will overwrite\n",
+			r.repoName, r.tag, existing[:19], r.manifestDigest[:19])
+		r.replacing.Store(true)
+		return nil
+	}
+	c.progress.Logf("  %s:%s conflict: registry has %s, computed %s; refusing to replace (use --overwrite)\n",
 		r.repoName, r.tag, existing[:19], r.manifestDigest[:19])
 	r.tagConflict.Store(true)
-	r.conflictDgst = existing
 	r.skipManifest.Store(true)
 	return nil
 }
@@ -582,16 +623,24 @@ func (c *pushCoordinator) afterBlob(j blobJob) {
 		return
 	}
 	if err := c.rc.pushManifest(j.ref.repoName, j.ref.tag, mediaType, j.ref.manifestData); err != nil {
-		// A mid-run manifest push error is a genuine failure (network/auth/5xx),
-		// NOT a benign tag-immutability conflict — the ref did not land. Track it
-		// separately so the run summary reports it under an error heading and
-		// exits non-zero. Real conflicts are detected up front in precheckOne.
-		fmt.Fprintf(os.Stderr, "Error pushing manifest %s:%s: %v\n", j.ref.repoName, j.ref.tag, err)
+		// A manifest push error is a genuine failure (network/auth/5xx, or the
+		// registry rejecting an overwrite of an immutable tag). The ref did
+		// not land. Refused conflicts are decided up front in precheckOne.
+		reason := err.Error()
+		if j.ref.replacing.Load() {
+			reason = fmt.Sprintf("overwrite of %s failed: %s", j.ref.conflictDgst, reason)
+		}
+		fmt.Fprintf(os.Stderr, "Error pushing manifest %s:%s: %s\n", j.ref.repoName, j.ref.tag, reason)
 		j.ref.pushFailed.Store(true)
-		j.ref.failReason = err.Error()
+		j.ref.failReason = reason
 		return
 	}
-	c.progress.Logf("  %s:%s manifest pushed (%s)\n", j.ref.repoName, j.ref.tag, j.ref.manifestDigest[:19])
+	if j.ref.replacing.Load() {
+		j.ref.overwritten.Store(true)
+		c.progress.Logf("  %s:%s overwritten: was %s, now %s\n", j.ref.repoName, j.ref.tag, j.ref.conflictDgst, j.ref.manifestDigest)
+	} else {
+		c.progress.Logf("  %s:%s manifest pushed (%s)\n", j.ref.repoName, j.ref.tag, j.ref.manifestDigest[:19])
+	}
 
 	// Mirror to bare Docker Hub name. Roxxy itself 308-redirects bare names
 	// to library/<name> so the canonical key on a roxxy destination is the
